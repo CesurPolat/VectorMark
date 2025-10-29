@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "VectorMark",
+  "version": "0.1",
+  "description": "VectorMark — Smart bookmark manager that automatically categorizes and organizes your saved websites.",
+  "icons": {
+    "16": "icons/VectorMarkIcon_16.png",
+    "48": "icons/VectorMarkIcon_48.png",
+    "128": "icons/VectorMarkIcon_128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Click to open panel"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "permissions": ["activeTab", "scripting", "bookmarks", "sidePanel"]
+  
+}
