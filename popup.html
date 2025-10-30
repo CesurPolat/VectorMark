@@ -7,25 +7,55 @@
 </head>
 
 <body>
-  <div class="columns is-mobile p-3 m-0" style="width: 400px;">
+  <div class="columns is-mobile p-3 m-0" style="width: 450px;">
 
-    <div class="column is-one-third">Web icon</div>
+    <div class="column is-one-third">
+      <figure class="image is-96x96">
+        <img src="https://bulma.io/assets/images/placeholders/96x96.png" />
+      </figure>
+    </div>
 
     <div class="column">
 
-      <p class="title is-6 mb-2">Title</p>
+      <!-- Title Input -->
+      <p class="title is-6 mb-3">Title</p>
       <input class="input is-rounded" type="text" placeholder="Title" />
+
+      <!-- Folder Dropdown -->
+      <p class="title is-6 my-3">Folder</p>
+      <div id="folder-drp" class="dropdown" style="width: 100%;">
+        <div class="dropdown-trigger" style="width: 100%;">
+          <button class="button is-rounded" style="width: 100%;" aria-haspopup="true" aria-controls="dropdown-menu">
+            <span class="is-pulled-left">Folder</span>
+            <span class="icon is-small is-pulled-right">
+              <i class="fas fa-angle-down" aria-hidden="true"></i>
+            </span>
+          </button>
+        </div>
+        <div class="dropdown-menu" id="dropdown-menu" role="menu">
+          <div class="dropdown-content">
+            <a href="#" class="dropdown-item"> Dropdown item </a>
+            <a class="dropdown-item"> Other dropdown item </a>
+            <a href="#" class="dropdown-item is-active"> Active dropdown item </a>
+            <a href="#" class="dropdown-item"> Other dropdown item </a>
+            <hr class="dropdown-divider" />
+            <a href="#" class="dropdown-item"> With a divider </a>
+          </div>
+        </div>
+      </div>
 
       <!-- Buttons -->
       <div class="buttons is-pulled-right mt-4">
-        <button class="button is-primary is-dark">Done</button>
-        <button class="button is-danger is-dark">Remove</button>
+        <button id="done-btn" class="button is-primary is-dark">Done</button>
+        <button id="remove-btn" class="button is-danger is-dark">Remove</button>
       </div>
 
     </div>
 
   </div>
-
+  
+  <script src="vendor/jquery-3.7.1.min.js"></script>
+  <script defer src="vendor/fontawesome-all.js"></script>
   <script src="popup.js"></script>
 </body>
 
