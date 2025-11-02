@@ -1,4 +1,8 @@
-$(document).ready(function () {
+$(document).ready(async function () {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  $("#title-input").val(tab.title);
+  $("#icon-img").attr("src", tab.favIconUrl);
 
   $("#done-btn").click(function () {
     chrome.action.setBadgeText({ text: " " });
@@ -16,10 +20,12 @@ $(document).ready(function () {
     $(this).toggleClass("is-active");
   });
 
-});
+  $("#other-bookmarks-btn").click(async function () {
+    await chrome.sidePanel.open({ tabId: tab.id });
+    window.close();
+  });
 
-  // Aktif sekmeyi al
-  //const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+});
 
   // Script çalıştır
   /* 
@@ -28,9 +34,6 @@ $(document).ready(function () {
     func: () => (document.body.style.backgroundColor = "lightblue")
   }); 
   */
-
-  // Side paneli aç
-  //await chrome.sidePanel.open({ tabId: tab.id });
 
   // Yer imlecinleri al
   /* 

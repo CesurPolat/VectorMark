@@ -7,19 +7,20 @@
 </head>
 
 <body>
+
   <div class="columns is-mobile p-3 m-0" style="width: 450px;">
 
     <div class="column is-one-third">
       <figure class="image is-96x96">
-        <img src="https://bulma.io/assets/images/placeholders/96x96.png" />
+        <img id="icon-img" src="https://bulma.io/assets/images/placeholders/96x96.png" />
       </figure>
     </div>
 
-    <div class="column">
+    <div class="column is-two-thirds">
 
       <!-- Title Input -->
       <p class="title is-6 mb-3">Title</p>
-      <input class="input is-rounded" type="text" placeholder="Title" />
+      <input id="title-input" class="input is-rounded" type="text" placeholder="Title" />
 
       <!-- Folder Dropdown -->
       <p class="title is-6 my-3">Folder</p>
@@ -44,16 +45,23 @@
         </div>
       </div>
 
-      <!-- Buttons -->
-      <div class="buttons is-pulled-right mt-4">
-        <button id="done-btn" class="button is-primary is-dark">Done</button>
-        <button id="remove-btn" class="button is-danger is-dark">Remove</button>
-      </div>
-
     </div>
 
   </div>
-  
+
+  <div class="columns buttons is-mobile p-3 m-0" style="width: 100%;">
+
+    <div style="width: 100%;">
+      <button id="other-bookmarks-btn" class="button is-link is-dark">Other Bookmarks</button>
+
+      <div class="is-pulled-right">
+        <button id="done-btn" class="button is-primary is-dark">Done</button>
+        <button id="remove-btn" class="button is-danger is-dark">Remove</button>
+      </div>
+    </div>
+
+  </div>
+
   <script src="vendor/jquery-3.7.1.min.js"></script>
   <script defer src="vendor/fontawesome-all.js"></script>
   <script src="popup.js"></script>
