@@ -9,11 +9,14 @@
     "128": "icons/VectorMarkIcon_128.png"
   },
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "popup/popup.html",
     "default_title": "Click to open panel"
   },
   "side_panel": {
-    "default_path": "sidepanel.html"
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "content_security_policy": {
+   "extension_pages":"script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "host_permissions": ["<all_urls>"],
   "background": {"service_worker": "background.js"},
