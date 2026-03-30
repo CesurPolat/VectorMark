@@ -1,3 +1,6 @@
+import { addBookmarkWithIcon } from '../services/dbService.js';
+
+
 $(document).ready(async function () {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -7,6 +10,14 @@ $(document).ready(async function () {
   $("#done-btn").click(function () {
     chrome.action.setBadgeText({ text: " " });
     chrome.action.setBadgeBackgroundColor({ color: "#7af93b" });
+
+    addBookmarkWithIcon(
+      $("#title-input").val(),
+      tab.url,
+      null,
+      tab.favIconUrl
+    );
+
     window.close();
   });
 
