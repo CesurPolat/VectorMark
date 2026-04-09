@@ -4,18 +4,470 @@
 <head>
   <title>VectorMark</title>
   <link rel="stylesheet" href="../vendor/bulma.min.css" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --vm-bg: #09111f;
+      --vm-surface: rgba(12, 20, 34, 0.9);
+      --vm-surface-strong: rgba(18, 29, 48, 0.98);
+      --vm-border: rgba(144, 164, 184, 0.18);
+      --vm-text: #edf2ff;
+      --vm-muted: #93a4bd;
+      --vm-accent: #7af93b;
+      --vm-accent-2: #4ea1ff;
+      --vm-danger: #ff6b6b;
+      --vm-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(78, 161, 255, 0.16), transparent 34%),
+        radial-gradient(circle at right 20%, rgba(122, 249, 59, 0.12), transparent 28%),
+        linear-gradient(180deg, #09111f 0%, #070d18 100%);
+      color: var(--vm-text);
+      overflow: hidden;
+    }
+
+    body {
+      font-family: Inter, "Segoe UI", system-ui, sans-serif;
+    }
+
+    .vm-app {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .vm-shell {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      padding: 16px;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .vm-hero,
+    .vm-toolbar,
+    .vm-list-wrap,
+    .vm-empty,
+    .vm-error {
+      background: var(--vm-surface);
+      border: 1px solid var(--vm-border);
+      box-shadow: var(--vm-shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .vm-hero {
+      border-radius: 24px;
+      padding: 16px;
+    }
+
+    .vm-kicker {
+      color: var(--vm-accent);
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 0.7rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .vm-title {
+      color: var(--vm-text);
+      font-size: 1.25rem;
+      font-weight: 800;
+      line-height: 1.1;
+      margin: 0;
+    }
+
+    .vm-subtitle {
+      margin-top: 8px;
+      color: var(--vm-muted);
+      font-size: 0.92rem;
+    }
+
+    .vm-toolbar {
+      border-radius: 20px;
+      padding: 14px;
+    }
+
+    .vm-search .input {
+      background: var(--vm-surface-strong);
+      border-color: var(--vm-border);
+      color: var(--vm-text);
+      box-shadow: none;
+      height: 44px;
+    }
+
+    .vm-search .input::placeholder {
+      color: #7e8ea8;
+    }
+
+    .vm-search .input:focus {
+      border-color: rgba(78, 161, 255, 0.8);
+      box-shadow: 0 0 0 0.12em rgba(78, 161, 255, 0.18);
+    }
+
+    .vm-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .vm-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--vm-text);
+      border: 1px solid var(--vm-border);
+      font-size: 0.82rem;
+    }
+
+    .vm-chip strong {
+      color: white;
+    }
+
+    .vm-list-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      border-radius: 24px;
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .vm-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .vm-card {
+      border-radius: 18px;
+      border: 1px solid var(--vm-border);
+      background: rgba(10, 16, 29, 0.95);
+      padding: 14px;
+    }
+
+    .vm-card.is-active {
+      border-color: rgba(122, 249, 59, 0.55);
+      box-shadow: 0 0 0 1px rgba(122, 249, 59, 0.16);
+    }
+
+    .vm-card-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .vm-icon {
+      flex: 0 0 auto;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      overflow: hidden;
+    }
+
+    .vm-icon img {
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+    }
+
+    .vm-card-body {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .vm-bookmark-title {
+      color: var(--vm-text);
+      font-size: 0.98rem;
+      font-weight: 700;
+      display: block;
+      margin-bottom: 4px;
+      word-break: break-word;
+    }
+
+    .vm-bookmark-title:hover {
+      color: #bfe2ff;
+    }
+
+    .vm-bookmark-url {
+      color: var(--vm-muted);
+      font-size: 0.8rem;
+      word-break: break-all;
+    }
+
+    .vm-card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .vm-card-actions .button {
+      height: 34px;
+      border-radius: 12px;
+    }
+
+    .vm-empty,
+    .vm-error {
+      border-radius: 22px;
+      padding: 24px 18px;
+      color: var(--vm-text);
+      text-align: center;
+    }
+
+    .vm-empty-title,
+    .vm-error-title {
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .vm-empty-note,
+    .vm-error-note {
+      color: var(--vm-muted);
+      font-size: 0.9rem;
+    }
+
+    .vm-skeleton {
+      display: grid;
+      gap: 10px;
+    }
+
+    .vm-skeleton-item {
+      height: 92px;
+      border-radius: 18px;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
+      background-size: 200% 100%;
+      animation: vm-shimmer 1.2s infinite;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    @keyframes vm-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .vm-drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 7, 14, 0.6);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 18;
+    }
+
+    .vm-drawer-backdrop.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .vm-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      height: 100vh;
+      width: min(360px, 92vw);
+      background: rgba(8, 14, 25, 0.98);
+      border-left: 1px solid var(--vm-border);
+      box-shadow: -24px 0 60px rgba(0, 0, 0, 0.4);
+      transform: translateX(100%);
+      transition: transform 0.25s ease;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .vm-drawer.is-open {
+      transform: translateX(0);
+    }
+
+    .vm-drawer-header,
+    .vm-drawer-footer {
+      padding: 16px;
+      border-color: var(--vm-border);
+    }
+
+    .vm-drawer-header {
+      border-bottom: 1px solid var(--vm-border);
+    }
+
+    .vm-drawer-footer {
+      margin-top: auto;
+      border-top: 1px solid var(--vm-border);
+    }
+
+    .vm-drawer-body {
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .vm-field .label {
+      color: var(--vm-muted);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .vm-field .input {
+      background: var(--vm-surface-strong);
+      border-color: var(--vm-border);
+      color: var(--vm-text);
+      box-shadow: none;
+      border-radius: 14px;
+      height: 44px;
+    }
+
+    .vm-field .input:focus {
+      border-color: rgba(122, 249, 59, 0.72);
+      box-shadow: 0 0 0 0.12em rgba(122, 249, 59, 0.14);
+    }
+
+    .vm-helper {
+      color: var(--vm-muted);
+      font-size: 0.84rem;
+      margin-top: 8px;
+    }
+
+    .vm-link-button {
+      border: 0;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--vm-text);
+    }
+
+    .vm-link-button:hover {
+      color: white;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .button.is-link {
+      background-color: var(--vm-accent-2);
+      border-color: transparent;
+    }
+
+    .button.is-danger.is-light {
+      background: rgba(255, 107, 107, 0.16);
+      color: #ffb1b1;
+    }
+
+    .button.is-success.is-light {
+      background: rgba(122, 249, 59, 0.16);
+      color: #d6ffc1;
+    }
+
+    .is-hidden {
+      display: none !important;
+    }
+  </style>
 </head>
 
 <body>
 
-  <section class="section">
-    <div class="container">
-      <h1 class="title">Bookmarks</h1>
-      <div id="bookmarks-list">
-        <!-- Bookmarks will be listed here -->
+  <div class="vm-app">
+    <div class="vm-shell">
+      <section class="vm-hero">
+        <p class="vm-kicker">VectorMark</p>
+        <h1 class="vm-title">Bookmarks</h1>
+        <p class="vm-subtitle">Search, edit, and remove your saved pages without leaving the side panel.</p>
+      </section>
+
+      <section class="vm-toolbar">
+        <div class="field vm-search mb-3">
+          <div class="control has-icons-left">
+            <input id="bookmark-search" class="input" type="search" placeholder="Search by title or URL" />
+            <span class="icon is-left">
+              <i class="fas fa-search"></i>
+            </span>
+          </div>
+        </div>
+
+        <div class="vm-stats">
+          <span class="vm-chip"><i class="fas fa-bookmark"></i> <strong id="bookmark-count">0</strong> items</span>
+          <span class="vm-chip"><i class="fas fa-bolt"></i> <span id="bookmark-status">Ready</span></span>
+        </div>
+      </section>
+
+      <section class="vm-list-wrap">
+        <div id="loading-state" class="vm-skeleton is-hidden" aria-live="polite">
+          <div class="vm-skeleton-item"></div>
+          <div class="vm-skeleton-item"></div>
+          <div class="vm-skeleton-item"></div>
+        </div>
+
+        <div id="empty-state" class="vm-empty is-hidden">
+          <div class="vm-empty-title">No bookmarks found</div>
+          <div class="vm-empty-note">Try another search or save a bookmark from the popup.</div>
+        </div>
+
+        <div id="error-state" class="vm-error is-hidden">
+          <div class="vm-error-title">Could not load bookmarks</div>
+          <div class="vm-error-note" id="error-message">Something went wrong while loading the data.</div>
+        </div>
+
+        <div id="bookmarks-list" class="vm-list"></div>
       </div>
-    </div>
-  </section>
+
+    <div id="drawer-backdrop" class="vm-drawer-backdrop"></div>
+
+    <aside id="bookmark-drawer" class="vm-drawer" aria-hidden="true">
+      <div class="vm-drawer-header">
+        <div class="is-flex is-justify-content-space-between is-align-items-center">
+          <div>
+            <p class="vm-kicker mb-1">Edit bookmark</p>
+            <h2 class="title is-5 has-text-white mb-0" id="drawer-title">Update details</h2>
+          </div>
+          <button id="drawer-close" class="button is-small vm-link-button" type="button">
+            <span class="icon"><i class="fas fa-times"></i></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="vm-drawer-body">
+        <div class="field vm-field">
+          <label class="label" for="edit-title">Title</label>
+          <div class="control">
+            <input id="edit-title" class="input" type="text" placeholder="Bookmark title" />
+          </div>
+        </div>
+
+        <div class="field vm-field">
+          <label class="label" for="edit-url">URL</label>
+          <div class="control">
+            <input id="edit-url" class="input" type="url" placeholder="https://example.com" />
+          </div>
+        </div>
+
+        <p class="vm-helper">Changes apply only to the bookmark metadata. The stored icon stays attached.</p>
+      </div>
+
+      <div class="vm-drawer-footer">
+        <div class="buttons is-right">
+          <button id="drawer-cancel" class="button is-light" type="button">Cancel</button>
+          <button id="drawer-save" class="button is-link" type="button">
+            <span class="icon"><i class="fas fa-save"></i></span>
+            <span>Save</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  </div>
 
   <script src="../vendor/jquery-3.7.1.min.js"></script>
   <script defer src="../vendor/fontawesome-all.js"></script>

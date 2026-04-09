@@ -1,4 +1,4 @@
-import { addBookmarkWithIcon } from '../services/dbService.js';
+import { addBookmarkWithIcon, deleteBookmarkByUrl } from '../services/dbService.js';
 
 
 $(document).ready(async function () {
@@ -7,21 +7,31 @@ $(document).ready(async function () {
   $("#title-input").val(tab.title);
   $("#icon-img").attr("src", tab.favIconUrl);
 
-  $("#done-btn").click(function () {
-    chrome.action.setBadgeText({ text: " " });
-    chrome.action.setBadgeBackgroundColor({ color: "#7af93b" });
+  $("#done-btn").click(async function () {
+    try {
+      await addBookmarkWithIcon(
+        $("#title-input").val(),
+        tab.url,
+        null,
+        tab.favIconUrl
+      );
 
-    addBookmarkWithIcon(
-      $("#title-input").val(),
-      tab.url,
-      null,
-      tab.favIconUrl
-    );
+      chrome.action.setBadgeText({ text: " " });
+      chrome.action.setBadgeBackgroundColor({ color: "#7af93b" });
 
-    window.close();
+      window.close();
+    } catch (error) {
+      console.error('Error saving bookmark:', error);
+    }
   });
 
-  $("#remove-btn").click(function () {
+  $("#remove-btn").click(async function () {
+    try {
+      await deleteBookmarkByUrl(tab.url);
+    } catch (error) {
+      console.error('Error removing bookmark:', error);
+    }
+
     chrome.action.setBadgeText({ text: '' });
     chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
     window.close();
