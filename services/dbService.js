@@ -164,3 +164,57 @@ export async function isUrlExist(url) {
     throw error;
   }
 }
+
+export async function saveOrUpdateBookmarkByUrl(title, url, folderId, base64) {
+  try {
+    return await db.transaction('rw', db.bookmarks, db.icons, async () => {
+      const bookmark = await db.bookmarks
+        .where('url')
+        .equals(url)
+        .first();
+
+      if (!bookmark) {
+        const iconId = await db.icons.add({ base64 });
+        const bookmarkId = await db.bookmarks.add({
+          title,
+          url,
+          folderId,
+          iconId
+        });
+
+        return {
+          bookmarkId,
+          action: 'created'
+        };
+      }
+
+      let iconId = bookmark.iconId;
+
+      if (base64) {
+        if (iconId) {
+          await db.icons.update(iconId, { base64 });
+        } else {
+          iconId = await db.icons.add({ base64 });
+        }
+      }
+
+      const updates = {
+        title
+      };
+
+      if (iconId) {
+        updates.iconId = iconId;
+      }
+
+      await db.bookmarks.update(bookmark.id, updates);
+
+      return {
+        bookmarkId: bookmark.id,
+        action: 'updated'
+      };
+    });
+  } catch (error) {
+    console.error('Error saving or updating bookmark by url:', error);
+    throw error;
+  }
+}

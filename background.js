@@ -1,5 +1,17 @@
 import { isUrlExist } from '../services/dbService.js';
 
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
+    console.error('Error setting side panel behavior on install:', error);
+  });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
+    console.error('Error setting side panel behavior on startup:', error);
+  });
+});
+
 
 // When url changes, update badge
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
@@ -58,3 +70,33 @@ function badgeUpdate(_url, _status) {
 
 
 }
+
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message?.type) {
+    return;
+  }
+
+  if (message.type === 'open-side-panel-shortcut') {
+    const tabId = sender?.tab?.id;
+
+    if (!tabId) {
+      return;
+    }
+
+    chrome.sidePanel.open({ tabId }).catch((error) => {
+      console.error('Error opening side panel from shortcut script:', error);
+    });
+
+    return;
+  }
+
+  if (message.type === 'open-popup-shortcut') {
+    const windowId = sender?.tab?.windowId;
+
+    chrome.action.openPopup(
+      windowId ? { windowId } : undefined
+    ).catch((error) => {
+      console.error('Error opening action popup from shortcut script:', error);
+    });
+  }
+});

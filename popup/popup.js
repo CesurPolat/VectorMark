@@ -1,23 +1,31 @@
-import { addBookmarkWithIcon, deleteBookmarkByUrl } from '../services/dbService.js';
+import { deleteBookmarkByUrl, saveOrUpdateBookmarkByUrl } from '../services/dbService.js';
 
 
 $(document).ready(async function () {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const source = await resolveSourceTabContext();
+  const currentUrl = source.url;
 
-  $("#title-input").val(tab.title);
-  $("#icon-img").attr("src", tab.favIconUrl);
+  $("#title-input").val(source.title);
+  $("#icon-img").attr("src", source.favIconUrl);
+
+  if (isSupportedUrl(currentUrl)) {
+    try {
+      await saveBookmark(currentUrl, source.favIconUrl);
+      markAsSaved();
+    } catch (error) {
+      console.error('Error auto-saving bookmark:', error);
+    }
+  }
 
   $("#done-btn").click(async function () {
-    try {
-      await addBookmarkWithIcon(
-        $("#title-input").val(),
-        tab.url,
-        null,
-        tab.favIconUrl
-      );
+    if (!isSupportedUrl(currentUrl)) {
+      window.close();
+      return;
+    }
 
-      chrome.action.setBadgeText({ text: " " });
-      chrome.action.setBadgeBackgroundColor({ color: "#7af93b" });
+    try {
+      await saveBookmark(currentUrl, source.favIconUrl);
+      markAsSaved();
 
       window.close();
     } catch (error) {
@@ -27,7 +35,7 @@ $(document).ready(async function () {
 
   $("#remove-btn").click(async function () {
     try {
-      await deleteBookmarkByUrl(tab.url);
+      await deleteBookmarkByUrl(currentUrl);
     } catch (error) {
       console.error('Error removing bookmark:', error);
     }
@@ -42,11 +50,56 @@ $(document).ready(async function () {
   });
 
   $("#other-bookmarks-btn").click(async function () {
-    await chrome.sidePanel.open({ tabId: tab.id });
+    if (source.tabId) {
+      await chrome.sidePanel.open({ tabId: source.tabId });
+    }
     window.close();
   });
 
 });
+
+async function resolveSourceTabContext() {
+  const params = new URLSearchParams(window.location.search);
+  const sourceTabIdParam = params.get('sourceTabId');
+
+  const contextFromParams = {
+    tabId: sourceTabIdParam ? Number(sourceTabIdParam) : null,
+    title: params.get('title') || '',
+    url: params.get('url') || '',
+    favIconUrl: params.get('favIconUrl') || ''
+  };
+
+  if (contextFromParams.url) {
+    return contextFromParams;
+  }
+
+  const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  return {
+    tabId: activeTab?.id ?? null,
+    title: activeTab?.title ?? '',
+    url: activeTab?.url ?? '',
+    favIconUrl: activeTab?.favIconUrl ?? ''
+  };
+}
+
+function isSupportedUrl(url) {
+  return typeof url === 'string' && (url.startsWith('http') || url.startsWith('file'));
+}
+
+async function saveBookmark(url, base64) {
+  await saveOrUpdateBookmarkByUrl(
+    $("#title-input").val(),
+    url,
+    null,
+    base64
+  );
+}
+
+function markAsSaved() {
+  chrome.action.setBadgeText({ text: " " });
+  chrome.action.setBadgeBackgroundColor({ color: "#7af93b" });
+}
 
   // Script çalıştır
   /* 
