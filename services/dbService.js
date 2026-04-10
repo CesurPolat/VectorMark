@@ -1,4 +1,4 @@
-import * as DexieModule from '../vendor/dexie.js';
+import '../vendor/dexie.js';
 
 const db = new Dexie('myDatabase');
 db.version(1).stores({
@@ -129,6 +129,119 @@ export async function listBookmarksWithIcons(folderId = null) {
   }
 }
 
+function toSafePageNumber(value, fallback = 0) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+
+  return Math.floor(parsed);
+}
+
+function getFolderBookmarkCollection(folderId = null) {
+  return folderId === null
+    ? db.bookmarks.orderBy('id').reverse()
+    : db.bookmarks.where('folderId').equals(folderId);
+}
+
+async function attachIcons(bookmarks) {
+  return await Promise.all(
+    bookmarks.map(async (bookmark) => {
+      const icon = bookmark.iconId
+        ? await db.icons.get(bookmark.iconId)
+        : null;
+
+      return {
+        ...bookmark,
+        icon
+      };
+    })
+  );
+}
+
+export async function countBookmarks(folderId = null) {
+  try {
+    return await db.transaction('r', db.bookmarks, async () => {
+      return folderId === null
+        ? await db.bookmarks.count()
+        : await db.bookmarks.where('folderId').equals(folderId).count();
+    });
+  } catch (error) {
+    console.error('Error counting bookmarks:', error);
+    throw error;
+  }
+}
+
+export async function listBookmarksPageWithIcons(folderId = null, offset = 0, limit = 40) {
+  try {
+    const safeOffset = toSafePageNumber(offset, 0);
+    const safeLimit = Math.max(1, toSafePageNumber(limit, 40));
+
+    return await db.transaction('r', db.bookmarks, db.icons, async () => {
+      const bookmarks = await getFolderBookmarkCollection(folderId)
+        .offset(safeOffset)
+        .limit(safeLimit)
+        .toArray();
+
+      return await attachIcons(bookmarks);
+    });
+  } catch (error) {
+    console.error('Error listing bookmark page with icons:', error);
+    throw error;
+  }
+}
+
+function createSearchFilter(normalizedQuery) {
+  return (bookmark) => {
+    const title = (bookmark.title ?? '').toLowerCase();
+    const url = (bookmark.url ?? '').toLowerCase();
+
+    return title.includes(normalizedQuery) || url.includes(normalizedQuery);
+  };
+}
+
+export async function searchBookmarksPage(query, folderId = null, offset = 0, limit = 40) {
+  try {
+    const normalizedQuery = (query ?? '').trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      const [items, total] = await Promise.all([
+        listBookmarksPageWithIcons(folderId, offset, limit),
+        countBookmarks(folderId)
+      ]);
+
+      return { items, total };
+    }
+
+    const safeOffset = toSafePageNumber(offset, 0);
+    const safeLimit = Math.max(1, toSafePageNumber(limit, 40));
+    const filter = createSearchFilter(normalizedQuery);
+
+    return await db.transaction('r', db.bookmarks, db.icons, async () => {
+      const total = await getFolderBookmarkCollection(folderId)
+        .filter(filter)
+        .count();
+
+      const bookmarks = await getFolderBookmarkCollection(folderId)
+        .filter(filter)
+        .offset(safeOffset)
+        .limit(safeLimit)
+        .toArray();
+
+      const items = await attachIcons(bookmarks);
+
+      return {
+        items,
+        total
+      };
+    });
+  } catch (error) {
+    console.error('Error searching bookmark page:', error);
+    throw error;
+  }
+}
+
 export async function searchBookmarks(query, folderId = null) {
   try {
     const normalizedQuery = (query ?? '').trim().toLowerCase();
@@ -215,6 +328,287 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, base64) {
     });
   } catch (error) {
     console.error('Error saving or updating bookmark by url:', error);
+    throw error;
+  }
+}
+
+function normalizeFolderName(name) {
+  return String(name ?? '').trim();
+}
+
+function ensureArray(value, label) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`);
+  }
+
+  return value;
+}
+
+export async function createFolder(name) {
+  try {
+    const normalizedName = normalizeFolderName(name);
+
+    if (!normalizedName) {
+      throw new Error('Folder name is required.');
+    }
+
+    const existing = await db.folders
+      .where('name')
+      .equalsIgnoreCase(normalizedName)
+      .first();
+
+    if (existing) {
+      throw new Error('A folder with this name already exists.');
+    }
+
+    const folderId = await db.folders.add({ name: normalizedName });
+
+    return {
+      id: folderId,
+      name: normalizedName,
+      bookmarkCount: 0
+    };
+  } catch (error) {
+    console.error('Error creating folder:', error);
+    throw error;
+  }
+}
+
+export async function listFolders() {
+  try {
+    return await db.transaction('r', db.folders, db.bookmarks, async () => {
+      const folders = await db.folders.toArray();
+
+      const withCounts = await Promise.all(
+        folders.map(async (folder) => {
+          const bookmarkCount = await db.bookmarks
+            .where('folderId')
+            .equals(folder.id)
+            .count();
+
+          return {
+            ...folder,
+            bookmarkCount
+          };
+        })
+      );
+
+      withCounts.sort((a, b) => a.name.localeCompare(b.name));
+
+      return withCounts;
+    });
+  } catch (error) {
+    console.error('Error listing folders:', error);
+    throw error;
+  }
+}
+
+export async function getFolderById(folderId) {
+  try {
+    if (folderId === null || folderId === undefined) {
+      return null;
+    }
+
+    const parsedFolderId = Number(folderId);
+
+    if (!Number.isInteger(parsedFolderId)) {
+      throw new Error('Invalid folder id.');
+    }
+
+    return await db.folders.get(parsedFolderId);
+  } catch (error) {
+    console.error('Error getting folder by id:', error);
+    throw error;
+  }
+}
+
+export async function renameFolder(folderId, newName) {
+  try {
+    const parsedFolderId = Number(folderId);
+    const normalizedName = normalizeFolderName(newName);
+
+    if (!Number.isInteger(parsedFolderId)) {
+      throw new Error('Invalid folder id.');
+    }
+
+    if (!normalizedName) {
+      throw new Error('Folder name is required.');
+    }
+
+    return await db.transaction('rw', db.folders, async () => {
+      const current = await db.folders.get(parsedFolderId);
+
+      if (!current) {
+        throw new Error('Folder not found.');
+      }
+
+      const existing = await db.folders
+        .where('name')
+        .equalsIgnoreCase(normalizedName)
+        .first();
+
+      if (existing && existing.id !== parsedFolderId) {
+        throw new Error('A folder with this name already exists.');
+      }
+
+      await db.folders.update(parsedFolderId, { name: normalizedName });
+
+      return parsedFolderId;
+    });
+  } catch (error) {
+    console.error('Error renaming folder:', error);
+    throw error;
+  }
+}
+
+export async function deleteFolder(folderId, moveBookmarksTo = null) {
+  try {
+    const parsedFolderId = Number(folderId);
+
+    if (!Number.isInteger(parsedFolderId)) {
+      throw new Error('Invalid folder id.');
+    }
+
+    const parsedMoveFolderId = moveBookmarksTo === null || moveBookmarksTo === undefined
+      ? null
+      : Number(moveBookmarksTo);
+
+    if (parsedMoveFolderId !== null && !Number.isInteger(parsedMoveFolderId)) {
+      throw new Error('Invalid destination folder id.');
+    }
+
+    if (parsedMoveFolderId !== null && parsedMoveFolderId === parsedFolderId) {
+      throw new Error('Destination folder cannot be the same folder.');
+    }
+
+    return await db.transaction('rw', db.folders, db.bookmarks, async () => {
+      const folder = await db.folders.get(parsedFolderId);
+
+      if (!folder) {
+        return false;
+      }
+
+      if (parsedMoveFolderId !== null) {
+        const destination = await db.folders.get(parsedMoveFolderId);
+
+        if (!destination) {
+          throw new Error('Destination folder not found.');
+        }
+
+        await db.bookmarks
+          .where('folderId')
+          .equals(parsedFolderId)
+          .modify({ folderId: parsedMoveFolderId });
+      } else {
+        await db.bookmarks
+          .where('folderId')
+          .equals(parsedFolderId)
+          .modify({ folderId: null });
+      }
+
+      await db.folders.delete(parsedFolderId);
+
+      return true;
+    });
+  } catch (error) {
+    console.error('Error deleting folder:', error);
+    throw error;
+  }
+}
+
+export async function exportDatabase() {
+  try {
+    return await db.transaction('r', db.folders, db.icons, db.bookmarks, async () => {
+      const folders = await db.folders.toArray();
+      const icons = await db.icons.toArray();
+      const bookmarks = await db.bookmarks.toArray();
+
+      return {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        data: {
+          folders,
+          icons,
+          bookmarks
+        }
+      };
+    });
+  } catch (error) {
+    console.error('Error exporting database:', error);
+    throw error;
+  }
+}
+
+export async function importDatabaseReplace(payload) {
+  try {
+    const parsedPayload = typeof payload === 'string'
+      ? JSON.parse(payload)
+      : payload;
+
+    const data = parsedPayload?.data ?? parsedPayload;
+
+    const folders = ensureArray(data?.folders, 'folders')
+      .map((folder) => ({
+        id: Number(folder.id),
+        name: normalizeFolderName(folder.name)
+      }))
+      .filter((folder) => Number.isInteger(folder.id) && folder.name);
+
+    const icons = ensureArray(data?.icons, 'icons')
+      .map((icon) => ({
+        id: Number(icon.id),
+        base64: String(icon.base64 ?? '')
+      }))
+      .filter((icon) => Number.isInteger(icon.id));
+
+    const validFolderIds = new Set(folders.map((folder) => folder.id));
+    const validIconIds = new Set(icons.map((icon) => icon.id));
+
+    const bookmarks = ensureArray(data?.bookmarks, 'bookmarks')
+      .map((bookmark) => {
+        const id = Number(bookmark.id);
+        const folderId = bookmark.folderId === null || bookmark.folderId === undefined
+          ? null
+          : Number(bookmark.folderId);
+        const iconId = bookmark.iconId === null || bookmark.iconId === undefined
+          ? null
+          : Number(bookmark.iconId);
+
+        return {
+          id,
+          title: String(bookmark.title ?? ''),
+          url: String(bookmark.url ?? ''),
+          folderId: Number.isInteger(folderId) && validFolderIds.has(folderId) ? folderId : null,
+          iconId: Number.isInteger(iconId) && validIconIds.has(iconId) ? iconId : null
+        };
+      })
+      .filter((bookmark) => Number.isInteger(bookmark.id) && bookmark.url);
+
+    await db.transaction('rw', db.folders, db.icons, db.bookmarks, async () => {
+      await db.bookmarks.clear();
+      await db.icons.clear();
+      await db.folders.clear();
+
+      if (folders.length > 0) {
+        await db.folders.bulkAdd(folders);
+      }
+
+      if (icons.length > 0) {
+        await db.icons.bulkAdd(icons);
+      }
+
+      if (bookmarks.length > 0) {
+        await db.bookmarks.bulkAdd(bookmarks);
+      }
+    });
+
+    return {
+      folders: folders.length,
+      icons: icons.length,
+      bookmarks: bookmarks.length
+    };
+  } catch (error) {
+    console.error('Error importing database:', error);
     throw error;
   }
 }
