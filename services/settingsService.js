@@ -3,6 +3,8 @@ const DEFAULT_SETTINGS = {
   pageSize: 40
 };
 
+const SETTINGS_STORAGE_KEY = 'vectormarkSettings';
+
 function clampPageSize(value) {
   const parsed = Number(value);
 
@@ -32,8 +34,23 @@ export async function getSettings() {
   }
 
   return await new Promise((resolve) => {
-    storage.get(DEFAULT_SETTINGS, (result) => {
-      resolve(normalizeSettings(result));
+    storage.get([SETTINGS_STORAGE_KEY, 'openInNewTab', 'pageSize'], (result) => {
+      const runtimeError = chrome.runtime?.lastError;
+
+      if (runtimeError) {
+        console.error('Error reading settings from storage:', runtimeError);
+        resolve({ ...DEFAULT_SETTINGS });
+        return;
+      }
+
+      if (result && typeof result[SETTINGS_STORAGE_KEY] === 'object' && result[SETTINGS_STORAGE_KEY] !== null) {
+        resolve(normalizeSettings(result[SETTINGS_STORAGE_KEY]));
+        return;
+      }
+
+      // Legacy fallback for old flat keys.
+      const legacy = normalizeSettings(result || {});
+      resolve(legacy);
     });
   });
 }
@@ -45,10 +62,16 @@ export async function updateSettings(partialSettings) {
     return normalizeSettings({ ...DEFAULT_SETTINGS, ...partialSettings });
   }
 
-  const merged = normalizeSettings({ ...DEFAULT_SETTINGS, ...partialSettings });
+  const current = await getSettings();
+  const merged = normalizeSettings({ ...current, ...partialSettings });
 
   await new Promise((resolve, reject) => {
-    storage.set(merged, () => {
+    storage.set({
+      [SETTINGS_STORAGE_KEY]: merged,
+      // Keep legacy keys for backward compatibility.
+      openInNewTab: merged.openInNewTab,
+      pageSize: merged.pageSize
+    }, () => {
       const runtimeError = chrome.runtime?.lastError;
 
       if (runtimeError) {

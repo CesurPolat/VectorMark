@@ -67,7 +67,7 @@
 
     .vm-hero {
       border-radius: 16px;
-      padding: 10px 12px;
+      padding: 8px 10px;
     }
 
     .vm-kicker {
@@ -81,7 +81,7 @@
 
     .vm-title {
       color: var(--vm-text);
-      font-size: 1.05rem;
+      font-size: 0.94rem;
       font-weight: 800;
       line-height: 1.1;
       margin: 0;
@@ -95,9 +95,31 @@
     }
 
     .vm-subtitle {
-      margin-top: 5px;
+      margin-top: 3px;
       color: var(--vm-muted);
+      font-size: 0.73rem;
+      line-height: 1.3;
+    }
+
+    .vm-hero-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .vm-hero-actions .button {
+      height: 28px;
+      width: 28px;
+      border-radius: 8px;
+      padding: 0;
       font-size: 0.8rem;
+      justify-content: center;
+    }
+
+    .vm-hero-actions .button .icon {
+      margin: 0;
     }
 
     .vm-explorer {
@@ -397,6 +419,10 @@
       border-color: rgba(78, 161, 255, 0.65);
     }
 
+    .vm-folder-row .vm-card-head {
+      align-items: center;
+    }
+
     .vm-folder-subtext {
       color: var(--vm-muted);
       font-size: 0.72rem;
@@ -437,6 +463,18 @@
       width: 15px;
       height: 15px;
       object-fit: contain;
+    }
+
+    .vm-icon .svg-inline--fa,
+    .vm-icon i {
+      display: block;
+      line-height: 1;
+    }
+
+    .vm-folder-row .vm-icon .svg-inline--fa,
+    .vm-folder-row .vm-icon i {
+      width: 14px;
+      height: 14px;
     }
 
     .vm-card-body {
@@ -649,12 +687,19 @@
             <p class="vm-kicker">VectorMark</p>
             <h1 class="vm-title">Bookmarks</h1>
           </div>
-          <button id="settings-open-btn" class="button is-small vm-link-button" type="button" title="Settings">
-            <span class="icon"><i class="fas fa-cog"></i></span>
-            <span>Settings</span>
-          </button>
+          <div class="vm-hero-actions">
+            <button id="fullscreen-toggle-btn" class="button is-small vm-link-button" type="button" title="Open in New Tab" aria-label="Open in New Tab">
+              <span class="icon"><i class="fas fa-expand"></i></span>
+            </button>
+            <button id="settings-open-btn" class="button is-small vm-link-button" type="button" title="Settings" aria-label="Settings">
+              <span class="icon"><i class="fas fa-cog"></i></span>
+            </button>
+            <button id="panel-close-btn" class="button is-small vm-link-button" type="button" title="Close" aria-label="Close">
+              <span class="icon"><i class="fas fa-times"></i></span>
+            </button>
+          </div>
         </div>
-        <p class="vm-subtitle">Search, edit, and remove your saved pages without leaving the side panel.</p>
+        <p class="vm-subtitle">Search, edit, and remove bookmarks quickly.</p>
       </section>
 
       <section class="vm-explorer">

@@ -43,6 +43,8 @@ let $breadcrumb;
 let $createFolderInput;
 let $createFolderBtn;
 let $settingsOpenBtn;
+let $fullscreenToggleBtn;
+let $panelCloseBtn;
 let $loadingState;
 let $emptyState;
 let $errorState;
@@ -118,6 +120,8 @@ function cacheDom() {
   $createFolderInput = $('#create-folder-input');
   $createFolderBtn = $('#create-folder-btn');
   $settingsOpenBtn = $('#settings-open-btn');
+  $fullscreenToggleBtn = $('#fullscreen-toggle-btn');
+  $panelCloseBtn = $('#panel-close-btn');
   $loadingState = $('#loading-state');
   $emptyState = $('#empty-state');
   $errorState = $('#error-state');
@@ -207,23 +211,30 @@ function bindEvents() {
   $settingsOpenBtn.on('click', openSettingsDrawer);
   $settingsClose.on('click', closeSettingsDrawer);
   $settingsCancel.on('click', closeSettingsDrawer);
+  $fullscreenToggleBtn.on('click', toggleFullscreenMode);
+  $panelCloseBtn.on('click', closePanelWindow);
 
   $openNewTabToggle.on('change', async () => {
-    state.openInNewTab = $openNewTabToggle.prop('checked');
+    const nextOpenInNewTab = $openNewTabToggle.prop('checked');
+    state.openInNewTab = nextOpenInNewTab;
 
     try {
-      await updateSettings({
+      const saved = await updateSettings({
         openInNewTab: state.openInNewTab,
         pageSize: state.pageSize
       });
+
+      state.openInNewTab = saved.openInNewTab;
+      state.pageSize = saved.pageSize;
+      syncSettingsControls();
 
       render();
       setSettingsStatus('Behavior setting saved.', false);
     } catch (error) {
       console.error('Error saving openInNewTab setting:', error);
       setSettingsStatus('Could not save link behavior.', true);
-      $openNewTabToggle.prop('checked', !state.openInNewTab);
-      state.openInNewTab = $openNewTabToggle.prop('checked');
+      state.openInNewTab = !nextOpenInNewTab;
+      syncSettingsControls();
     }
   });
 
@@ -238,10 +249,14 @@ function bindEvents() {
     state.pageSize = Math.min(250, Math.max(1, Math.floor(nextPageSize)));
 
     try {
-      await updateSettings({
+      const saved = await updateSettings({
         openInNewTab: state.openInNewTab,
         pageSize: state.pageSize
       });
+
+      state.openInNewTab = saved.openInNewTab;
+      state.pageSize = saved.pageSize;
+      syncSettingsControls();
 
       await loadBookmarks();
       setSettingsStatus('Page size updated.', false);
@@ -745,9 +760,17 @@ function closeDrawer() {
   render();
 }
 
-function openSettingsDrawer() {
+async function openSettingsDrawer() {
   if (state.activeDrawer === 'bookmark') {
     closeDrawer();
+  }
+
+  try {
+    const latest = await getSettings();
+    state.openInNewTab = latest.openInNewTab;
+    state.pageSize = latest.pageSize;
+  } catch (error) {
+    console.error('Error refreshing settings before opening drawer:', error);
   }
 
   state.activeDrawer = 'settings';
@@ -767,6 +790,48 @@ function closeSettingsDrawer() {
   $settingsDrawer.attr('aria-hidden', 'true');
   $drawerBackdrop.removeClass('is-open');
   state.activeDrawer = null;
+}
+
+async function toggleFullscreenMode() {
+  const panelUrl = chrome?.runtime?.getURL
+    ? chrome.runtime.getURL('sidepanel/sidepanel.html')
+    : 'sidepanel/sidepanel.html';
+
+  try {
+    await chrome.tabs.create({
+      url: panelUrl,
+      active: true
+    });
+
+    closePanelWindow();
+  } catch (error) {
+    console.error('Failed to open side panel as a tab:', error);
+    setStatus('Could not open side panel in a new tab.');
+  }
+}
+
+function closePanelWindow() {
+  try {
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  } catch (_error) {
+    // No-op
+  }
+
+  if (chrome?.runtime?.sendMessage) {
+    chrome.runtime.sendMessage({ type: 'close-side-panel' }, () => {
+      const runtimeError = chrome.runtime?.lastError;
+
+      if (runtimeError) {
+        console.error('Error sending close panel message:', runtimeError);
+        window.close();
+      }
+    });
+    return;
+  }
+
+  window.close();
 }
 
 async function saveBookmark() {

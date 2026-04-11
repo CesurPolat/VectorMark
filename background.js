@@ -83,8 +83,29 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       return;
     }
 
-    chrome.sidePanel.open({ tabId }).catch((error) => {
+    chrome.sidePanel.setOptions({ tabId, enabled: true }).then(() => {
+      return chrome.sidePanel.open({ tabId });
+    }).catch((error) => {
       console.error('Error opening side panel from shortcut script:', error);
+    });
+
+    return;
+  }
+
+  if (message.type === 'close-side-panel') {
+    chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+      const activeTab = tabs?.[0];
+
+      if (!activeTab?.id) {
+        return;
+      }
+
+      return chrome.sidePanel.setOptions({
+        tabId: activeTab.id,
+        enabled: false
+      });
+    }).catch((error) => {
+      console.error('Error closing side panel:', error);
     });
 
     return;
