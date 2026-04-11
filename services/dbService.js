@@ -7,6 +7,20 @@ db.version(1).stores({
   bookmarks: '++id, title, url, folderId, iconId'
 });
 
+db.version(2)
+  .stores({
+    folders: '++id, name, parentId, &[parentId+name]',
+    icons: '++id, base64',
+    bookmarks: '++id, title, url, folderId, iconId'
+  })
+  .upgrade(async (tx) => {
+    await tx.table('folders').toCollection().modify((folder) => {
+      if (!Object.prototype.hasOwnProperty.call(folder, 'parentId')) {
+        folder.parentId = null;
+      }
+    });
+  });
+
 // Add a bookmark with a new icon
 export async function addBookmarkWithIcon(title, url, folderId, base64) {
   try {
@@ -139,10 +153,36 @@ function toSafePageNumber(value, fallback = 0) {
   return Math.floor(parsed);
 }
 
-function getFolderBookmarkCollection(folderId = null) {
-  return folderId === null
-    ? db.bookmarks.orderBy('id').reverse()
-    : db.bookmarks.where('folderId').equals(folderId);
+function toSafePageSize(value, fallback = 40) {
+  const parsed = toSafePageNumber(value, fallback);
+  return Math.min(250, Math.max(1, parsed));
+}
+
+function toQueryOptions(options = {}) {
+  return {
+    rootOnly: options?.rootOnly === true
+  };
+}
+
+function isRootBookmark(bookmark) {
+  return bookmark?.folderId === null || bookmark?.folderId === undefined;
+}
+
+function getFolderBookmarkCollection(folderId = null, options = {}) {
+  const queryOptions = toQueryOptions(options);
+
+  if (folderId === null) {
+    if (queryOptions.rootOnly) {
+      return db.bookmarks
+        .orderBy('id')
+        .reverse()
+        .filter(isRootBookmark);
+    }
+
+    return db.bookmarks.orderBy('id').reverse();
+  }
+
+  return db.bookmarks.where('folderId').equals(folderId);
 }
 
 async function attachIcons(bookmarks) {
@@ -160,12 +200,18 @@ async function attachIcons(bookmarks) {
   );
 }
 
-export async function countBookmarks(folderId = null) {
+export async function countBookmarks(folderId = null, options = {}) {
   try {
+    const queryOptions = toQueryOptions(options);
+
     return await db.transaction('r', db.bookmarks, async () => {
-      return folderId === null
-        ? await db.bookmarks.count()
-        : await db.bookmarks.where('folderId').equals(folderId).count();
+      if (folderId === null) {
+        return queryOptions.rootOnly
+          ? await db.bookmarks.toCollection().filter(isRootBookmark).count()
+          : await db.bookmarks.count();
+      }
+
+      return await db.bookmarks.where('folderId').equals(folderId).count();
     });
   } catch (error) {
     console.error('Error counting bookmarks:', error);
@@ -173,13 +219,14 @@ export async function countBookmarks(folderId = null) {
   }
 }
 
-export async function listBookmarksPageWithIcons(folderId = null, offset = 0, limit = 40) {
+export async function listBookmarksPageWithIcons(folderId = null, offset = 0, limit = 40, options = {}) {
   try {
     const safeOffset = toSafePageNumber(offset, 0);
-    const safeLimit = Math.max(1, toSafePageNumber(limit, 40));
+    const safeLimit = toSafePageSize(limit, 40);
+    const queryOptions = toQueryOptions(options);
 
     return await db.transaction('r', db.bookmarks, db.icons, async () => {
-      const bookmarks = await getFolderBookmarkCollection(folderId)
+      const bookmarks = await getFolderBookmarkCollection(folderId, queryOptions)
         .offset(safeOffset)
         .limit(safeLimit)
         .toArray();
@@ -201,29 +248,79 @@ function createSearchFilter(normalizedQuery) {
   };
 }
 
-export async function searchBookmarksPage(query, folderId = null, offset = 0, limit = 40) {
+async function getFolderScopeIds(folderId) {
+  if (folderId === null || folderId === undefined) {
+    return null;
+  }
+
+  const rootFolderId = normalizeFolderId(folderId);
+
+  if (rootFolderId === null) {
+    return null;
+  }
+
+  const folders = await db.folders.toArray();
+  const scopedIds = new Set([rootFolderId]);
+  const queue = [rootFolderId];
+
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+
+    folders.forEach((candidate) => {
+      if (!scopedIds.has(candidate.id) && (candidate.parentId ?? null) === currentId) {
+        scopedIds.add(candidate.id);
+        queue.push(candidate.id);
+      }
+    });
+  }
+
+  return scopedIds;
+}
+
+export async function searchBookmarksPage(query, folderId = null, offset = 0, limit = 40, options = {}) {
   try {
     const normalizedQuery = (query ?? '').trim().toLowerCase();
+    const queryOptions = toQueryOptions(options);
 
     if (!normalizedQuery) {
       const [items, total] = await Promise.all([
-        listBookmarksPageWithIcons(folderId, offset, limit),
-        countBookmarks(folderId)
+        listBookmarksPageWithIcons(folderId, offset, limit, queryOptions),
+        countBookmarks(folderId, queryOptions)
       ]);
 
       return { items, total };
     }
 
     const safeOffset = toSafePageNumber(offset, 0);
-    const safeLimit = Math.max(1, toSafePageNumber(limit, 40));
-    const filter = createSearchFilter(normalizedQuery);
+    const safeLimit = toSafePageSize(limit, 40);
+    const matchesQuery = createSearchFilter(normalizedQuery);
 
-    return await db.transaction('r', db.bookmarks, db.icons, async () => {
-      const total = await getFolderBookmarkCollection(folderId)
+    return await db.transaction('r', db.bookmarks, db.icons, db.folders, async () => {
+      const scopedFolderIds = await getFolderScopeIds(folderId);
+      const filter = (bookmark) => {
+        if (!matchesQuery(bookmark)) {
+          return false;
+        }
+
+        if (scopedFolderIds) {
+          return scopedFolderIds.has(bookmark.folderId);
+        }
+
+        if (queryOptions.rootOnly) {
+          return isRootBookmark(bookmark);
+        }
+
+        return true;
+      };
+
+      const total = await db.bookmarks
+        .toCollection()
         .filter(filter)
         .count();
 
-      const bookmarks = await getFolderBookmarkCollection(folderId)
+      const bookmarks = await db.bookmarks
+        .orderBy('id')
+        .reverse()
         .filter(filter)
         .offset(safeOffset)
         .limit(safeLimit)
@@ -336,6 +433,31 @@ function normalizeFolderName(name) {
   return String(name ?? '').trim();
 }
 
+function normalizeFolderId(folderId) {
+  if (folderId === null || folderId === undefined) {
+    return null;
+  }
+
+  const parsedFolderId = Number(folderId);
+
+  if (!Number.isInteger(parsedFolderId) || parsedFolderId <= 0) {
+    throw new Error('Invalid folder id.');
+  }
+
+  return parsedFolderId;
+}
+
+function normalizeParentId(parentId) {
+  return normalizeFolderId(parentId);
+}
+
+function normalizeFolderRecord(folder) {
+  return {
+    ...folder,
+    parentId: normalizeParentId(folder.parentId)
+  };
+}
+
 function ensureArray(value, label) {
   if (!Array.isArray(value)) {
     throw new Error(`${label} must be an array.`);
@@ -344,30 +466,49 @@ function ensureArray(value, label) {
   return value;
 }
 
-export async function createFolder(name) {
+export async function createFolder(name, parentId = null) {
   try {
     const normalizedName = normalizeFolderName(name);
+    const normalizedParentId = normalizeParentId(parentId);
 
     if (!normalizedName) {
       throw new Error('Folder name is required.');
     }
 
-    const existing = await db.folders
-      .where('name')
-      .equalsIgnoreCase(normalizedName)
-      .first();
+    return await db.transaction('rw', db.folders, async () => {
+      if (normalizedParentId !== null) {
+        const parentFolder = await db.folders.get(normalizedParentId);
 
-    if (existing) {
-      throw new Error('A folder with this name already exists.');
-    }
+        if (!parentFolder) {
+          throw new Error('Parent folder not found.');
+        }
+      }
 
-    const folderId = await db.folders.add({ name: normalizedName });
+      const siblingFolders = await db.folders
+        .where('parentId')
+        .equals(normalizedParentId)
+        .toArray();
 
-    return {
-      id: folderId,
-      name: normalizedName,
-      bookmarkCount: 0
-    };
+      const hasDuplicateName = siblingFolders.some((folder) => {
+        return folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
+      });
+
+      if (hasDuplicateName) {
+        throw new Error('A folder with this name already exists in this location.');
+      }
+
+      const folderId = await db.folders.add({
+        name: normalizedName,
+        parentId: normalizedParentId
+      });
+
+      return {
+        id: folderId,
+        name: normalizedName,
+        parentId: normalizedParentId,
+        bookmarkCount: 0
+      };
+    });
   } catch (error) {
     console.error('Error creating folder:', error);
     throw error;
@@ -377,7 +518,7 @@ export async function createFolder(name) {
 export async function listFolders() {
   try {
     return await db.transaction('r', db.folders, db.bookmarks, async () => {
-      const folders = await db.folders.toArray();
+      const folders = (await db.folders.toArray()).map(normalizeFolderRecord);
 
       const withCounts = await Promise.all(
         folders.map(async (folder) => {
@@ -405,31 +546,93 @@ export async function listFolders() {
 
 export async function getFolderById(folderId) {
   try {
-    if (folderId === null || folderId === undefined) {
+    const parsedFolderId = normalizeFolderId(folderId);
+
+    if (parsedFolderId === null) {
       return null;
     }
 
-    const parsedFolderId = Number(folderId);
-
-    if (!Number.isInteger(parsedFolderId)) {
-      throw new Error('Invalid folder id.');
-    }
-
-    return await db.folders.get(parsedFolderId);
+    const folder = await db.folders.get(parsedFolderId);
+    return folder ? normalizeFolderRecord(folder) : null;
   } catch (error) {
     console.error('Error getting folder by id:', error);
     throw error;
   }
 }
 
+export async function listChildFolders(parentId = null) {
+  try {
+    const normalizedParentId = normalizeParentId(parentId);
+
+    return await db.transaction('r', db.folders, db.bookmarks, async () => {
+      const folders = await db.folders
+        .where('parentId')
+        .equals(normalizedParentId)
+        .toArray();
+
+      const withCounts = await Promise.all(
+        folders.map(async (folder) => {
+          const bookmarkCount = await db.bookmarks
+            .where('folderId')
+            .equals(folder.id)
+            .count();
+
+          return {
+            ...normalizeFolderRecord(folder),
+            bookmarkCount
+          };
+        })
+      );
+
+      withCounts.sort((a, b) => a.name.localeCompare(b.name));
+      return withCounts;
+    });
+  } catch (error) {
+    console.error('Error listing child folders:', error);
+    throw error;
+  }
+}
+
+export async function listFolderAncestors(folderId) {
+  try {
+    const parsedFolderId = normalizeFolderId(folderId);
+
+    if (parsedFolderId === null) {
+      return [];
+    }
+
+    return await db.transaction('r', db.folders, async () => {
+      const ancestors = [];
+      let current = await db.folders.get(parsedFolderId);
+      const visited = new Set();
+
+      while (current) {
+        if (visited.has(current.id)) {
+          break;
+        }
+
+        visited.add(current.id);
+        ancestors.unshift(normalizeFolderRecord(current));
+
+        if (current.parentId === null || current.parentId === undefined) {
+          break;
+        }
+
+        current = await db.folders.get(current.parentId);
+      }
+
+      return ancestors;
+    });
+  } catch (error) {
+    console.error('Error listing folder ancestors:', error);
+    throw error;
+  }
+}
+
 export async function renameFolder(folderId, newName) {
   try {
-    const parsedFolderId = Number(folderId);
+    const parsedFolderId = normalizeFolderId(folderId);
     const normalizedName = normalizeFolderName(newName);
-
-    if (!Number.isInteger(parsedFolderId)) {
-      throw new Error('Invalid folder id.');
-    }
 
     if (!normalizedName) {
       throw new Error('Folder name is required.');
@@ -442,13 +645,17 @@ export async function renameFolder(folderId, newName) {
         throw new Error('Folder not found.');
       }
 
-      const existing = await db.folders
-        .where('name')
-        .equalsIgnoreCase(normalizedName)
-        .first();
+      const siblingFolders = await db.folders
+        .where('parentId')
+        .equals(current.parentId ?? null)
+        .toArray();
 
-      if (existing && existing.id !== parsedFolderId) {
-        throw new Error('A folder with this name already exists.');
+      const hasDuplicateName = siblingFolders.some((folder) => {
+        return folder.id !== parsedFolderId && folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
+      });
+
+      if (hasDuplicateName) {
+        throw new Error('A folder with this name already exists in this location.');
       }
 
       await db.folders.update(parsedFolderId, { name: normalizedName });
@@ -463,19 +670,8 @@ export async function renameFolder(folderId, newName) {
 
 export async function deleteFolder(folderId, moveBookmarksTo = null) {
   try {
-    const parsedFolderId = Number(folderId);
-
-    if (!Number.isInteger(parsedFolderId)) {
-      throw new Error('Invalid folder id.');
-    }
-
-    const parsedMoveFolderId = moveBookmarksTo === null || moveBookmarksTo === undefined
-      ? null
-      : Number(moveBookmarksTo);
-
-    if (parsedMoveFolderId !== null && !Number.isInteger(parsedMoveFolderId)) {
-      throw new Error('Invalid destination folder id.');
-    }
+    const parsedFolderId = normalizeFolderId(folderId);
+    const parsedMoveFolderId = normalizeFolderId(moveBookmarksTo);
 
     if (parsedMoveFolderId !== null && parsedMoveFolderId === parsedFolderId) {
       throw new Error('Destination folder cannot be the same folder.');
@@ -488,6 +684,27 @@ export async function deleteFolder(folderId, moveBookmarksTo = null) {
         return false;
       }
 
+      const allFolders = await db.folders.toArray();
+      const descendants = new Set();
+      const queue = [parsedFolderId];
+
+      while (queue.length > 0) {
+        const currentId = queue.shift();
+        descendants.add(currentId);
+
+        allFolders.forEach((candidate) => {
+          if (!descendants.has(candidate.id) && (candidate.parentId ?? null) === currentId) {
+            queue.push(candidate.id);
+          }
+        });
+      }
+
+      if (parsedMoveFolderId !== null && descendants.has(parsedMoveFolderId)) {
+        throw new Error('Destination folder cannot be inside the folder being deleted.');
+      }
+
+      const folderIdsToDelete = Array.from(descendants);
+
       if (parsedMoveFolderId !== null) {
         const destination = await db.folders.get(parsedMoveFolderId);
 
@@ -496,17 +713,15 @@ export async function deleteFolder(folderId, moveBookmarksTo = null) {
         }
 
         await db.bookmarks
-          .where('folderId')
-          .equals(parsedFolderId)
+          .filter((bookmark) => folderIdsToDelete.includes(bookmark.folderId))
           .modify({ folderId: parsedMoveFolderId });
       } else {
         await db.bookmarks
-          .where('folderId')
-          .equals(parsedFolderId)
+          .filter((bookmark) => folderIdsToDelete.includes(bookmark.folderId))
           .modify({ folderId: null });
       }
 
-      await db.folders.delete(parsedFolderId);
+      await db.folders.bulkDelete(folderIdsToDelete);
 
       return true;
     });
@@ -524,7 +739,7 @@ export async function exportDatabase() {
       const bookmarks = await db.bookmarks.toArray();
 
       return {
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
         data: {
           folders,
@@ -550,9 +765,20 @@ export async function importDatabaseReplace(payload) {
     const folders = ensureArray(data?.folders, 'folders')
       .map((folder) => ({
         id: Number(folder.id),
-        name: normalizeFolderName(folder.name)
+        name: normalizeFolderName(folder.name),
+        parentId: folder.parentId === null || folder.parentId === undefined
+          ? null
+          : Number(folder.parentId)
       }))
       .filter((folder) => Number.isInteger(folder.id) && folder.name);
+
+    const folderIds = new Set(folders.map((folder) => folder.id));
+
+    folders.forEach((folder) => {
+      if (!Number.isInteger(folder.parentId) || !folderIds.has(folder.parentId)) {
+        folder.parentId = null;
+      }
+    });
 
     const icons = ensureArray(data?.icons, 'icons')
       .map((icon) => ({

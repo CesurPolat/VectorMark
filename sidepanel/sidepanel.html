@@ -101,8 +101,8 @@
     }
 
     .vm-explorer {
-      display: grid;
-      grid-template-columns: 210px minmax(0, 1fr);
+      display: flex;
+      flex-direction: column;
       gap: 8px;
       min-height: 0;
       flex: 1;
@@ -269,6 +269,47 @@
       flex-wrap: wrap;
     }
 
+    .vm-settings-field {
+      margin-bottom: 10px;
+    }
+
+    .vm-settings-field:last-child {
+      margin-bottom: 0;
+    }
+
+    .vm-settings-field .label {
+      color: var(--vm-muted);
+      font-size: 0.78rem;
+      margin-bottom: 6px;
+    }
+
+    .vm-settings-field .select,
+    .vm-settings-field .select select {
+      width: 100%;
+    }
+
+    .vm-settings-field .select select {
+      background: var(--vm-surface-strong);
+      border-color: var(--vm-border);
+      color: var(--vm-text);
+      border-radius: 10px;
+      height: 34px;
+    }
+
+    .vm-settings-checkbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--vm-text);
+      font-size: 0.82rem;
+    }
+
+    .vm-settings-note {
+      color: var(--vm-muted);
+      font-size: 0.74rem;
+      margin-top: 6px;
+    }
+
     .vm-settings-status {
       margin-top: 10px;
       color: var(--vm-muted);
@@ -312,6 +353,54 @@
       display: flex;
       flex-direction: column;
       gap: 7px;
+    }
+
+    .vm-breadcrumb {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 8px;
+      min-height: 24px;
+    }
+
+    .vm-crumb {
+      border: 1px solid var(--vm-border);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--vm-text);
+      border-radius: 999px;
+      font-size: 0.72rem;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+
+    .vm-crumb.is-active {
+      border-color: rgba(122, 249, 59, 0.65);
+      background: rgba(122, 249, 59, 0.18);
+      color: #d8ffc7;
+      cursor: default;
+    }
+
+    .vm-crumb-sep {
+      color: var(--vm-muted);
+      font-size: 0.72rem;
+    }
+
+    .vm-folder-row {
+      border-color: rgba(78, 161, 255, 0.35);
+      background: rgba(22, 36, 59, 0.95);
+      cursor: pointer;
+    }
+
+    .vm-folder-row:hover {
+      background: rgba(30, 46, 73, 0.96);
+      border-color: rgba(78, 161, 255, 0.65);
+    }
+
+    .vm-folder-subtext {
+      color: var(--vm-muted);
+      font-size: 0.72rem;
+      margin-top: 2px;
     }
 
     .vm-card {
@@ -539,12 +628,12 @@
     }
 
     @media (max-width: 820px) {
-      .vm-explorer {
-        grid-template-columns: 1fr;
-      }
-
       .vm-folder-pane {
         max-height: 220px;
+      }
+
+      .vm-folder-create {
+        flex-direction: column;
       }
     }
   </style>
@@ -569,61 +658,51 @@
       </section>
 
       <section class="vm-explorer">
-        <aside class="vm-folder-pane">
-          <div class="vm-folder-box">
-            <div class="vm-folder-head">
-              <span class="vm-chip"><i class="fas fa-folder"></i> Folders</span>
-            </div>
+        <section class="vm-toolbar">
+          <div id="folder-breadcrumb" class="vm-breadcrumb" aria-label="Folder breadcrumb"></div>
 
-            <div id="folders-list" class="vm-folder-list"></div>
-
-            <div class="vm-folder-create">
-              <input id="create-folder-input" class="input" type="text" placeholder="New folder name" maxlength="60" />
-              <button id="create-folder-btn" class="button is-small is-link" type="button">
-                <span class="icon is-small"><i class="fas fa-plus"></i></span>
-                <span>Create</span>
-              </button>
+          <div class="field vm-search mb-3">
+            <div class="control has-icons-left">
+              <input id="bookmark-search" class="input" type="search" placeholder="Search by title or URL" />
+              <span class="icon is-left">
+                <i class="fas fa-search"></i>
+              </span>
             </div>
           </div>
-        </aside>
 
-        <section class="vm-bookmark-pane">
-          <section class="vm-toolbar">
-            <div class="field vm-search mb-3">
-              <div class="control has-icons-left">
-                <input id="bookmark-search" class="input" type="search" placeholder="Search by title or URL" />
-                <span class="icon is-left">
-                  <i class="fas fa-search"></i>
-                </span>
-              </div>
-            </div>
+          <div class="vm-folder-create mb-3">
+            <input id="create-folder-input" class="input" type="text" placeholder="New folder name" maxlength="60" />
+            <button id="create-folder-btn" class="button is-small is-link" type="button">
+              <span class="icon is-small"><i class="fas fa-plus"></i></span>
+              <span>Create Folder</span>
+            </button>
+          </div>
 
-            <div class="vm-stats">
-              <span class="vm-chip"><i class="fas fa-bookmark"></i> <strong id="bookmark-count">0</strong> items</span>
-              <span class="vm-chip"><i class="fas fa-bolt"></i> <span id="bookmark-status">Ready</span></span>
-            </div>
-          </section>
+          <div class="vm-stats">
+            <span class="vm-chip"><i class="fas fa-bookmark"></i> <strong id="bookmark-count">0</strong> items</span>
+            <span class="vm-chip"><i class="fas fa-bolt"></i> <span id="bookmark-status">Ready</span></span>
+          </div>
+        </section>
 
-          <section id="bookmark-scroll-wrap" class="vm-list-wrap">
-            <div id="loading-state" class="vm-skeleton is-hidden" aria-live="polite">
-              <div class="vm-skeleton-item"></div>
-              <div class="vm-skeleton-item"></div>
-              <div class="vm-skeleton-item"></div>
-            </div>
+        <section id="bookmark-scroll-wrap" class="vm-list-wrap">
+          <div id="loading-state" class="vm-skeleton is-hidden" aria-live="polite">
+            <div class="vm-skeleton-item"></div>
+            <div class="vm-skeleton-item"></div>
+            <div class="vm-skeleton-item"></div>
+          </div>
 
-            <div id="empty-state" class="vm-empty is-hidden">
-              <div class="vm-empty-title">No bookmarks found</div>
-              <div class="vm-empty-note">Try another search or save a bookmark from the popup.</div>
-            </div>
+          <div id="empty-state" class="vm-empty is-hidden">
+            <div class="vm-empty-title">No bookmarks found</div>
+            <div class="vm-empty-note">Try another search or save a bookmark from the popup.</div>
+          </div>
 
-            <div id="error-state" class="vm-error is-hidden">
-              <div class="vm-error-title">Could not load bookmarks</div>
-              <div class="vm-error-note" id="error-message">Something went wrong while loading the data.</div>
-            </div>
+          <div id="error-state" class="vm-error is-hidden">
+            <div class="vm-error-title">Could not load bookmarks</div>
+            <div class="vm-error-note" id="error-message">Something went wrong while loading the data.</div>
+          </div>
 
-            <div id="bookmarks-list" class="vm-list"></div>
-            <div id="loading-more-state" class="vm-loading-more is-hidden">Loading more bookmarks...</div>
-          </section>
+          <div id="bookmarks-list" class="vm-list"></div>
+          <div id="loading-more-state" class="vm-loading-more is-hidden">Loading more bookmarks...</div>
         </section>
       </section>
 
@@ -687,6 +766,29 @@
       </div>
 
       <div class="vm-drawer-body">
+        <div class="vm-settings-block">
+          <p class="title is-6">Behavior</p>
+          <div class="vm-settings-field">
+            <label class="vm-settings-checkbox" for="open-new-tab-toggle">
+              <input id="open-new-tab-toggle" type="checkbox" checked />
+              <span>Open links in new tab</span>
+            </label>
+          </div>
+          <div class="vm-settings-field">
+            <label class="label" for="page-size-select">Items per page</label>
+            <div class="select is-fullwidth">
+              <select id="page-size-select">
+                <option value="20">20</option>
+                <option value="40" selected>40</option>
+                <option value="60">60</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+              </select>
+            </div>
+            <p class="vm-settings-note">A larger value loads more entries per request.</p>
+          </div>
+        </div>
+
         <div class="vm-settings-block">
           <p class="title is-6">Database</p>
           <div class="vm-settings-actions">

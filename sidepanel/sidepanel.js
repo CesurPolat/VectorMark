@@ -1,4 +1,4 @@
-import {
+﻿import {
   listBookmarksPageWithIcons,
   searchBookmarksPage,
   countBookmarks,
@@ -10,6 +10,11 @@ import {
   importDatabaseReplace,
   saveOrUpdateBookmarkByUrl
 } from '../services/dbService.js';
+import {
+  getSettings,
+  updateSettings,
+  getDefaultSettings
+} from '../services/settingsService.js';
 
 const state = {
   bookmarks: [],
@@ -22,6 +27,7 @@ const state = {
   activeDrawer: null,
   settingsBusy: false,
   pageSize: 40,
+  openInNewTab: true,
   totalBookmarks: 0,
   hasMore: true,
   loadingMore: false,
@@ -33,7 +39,7 @@ let $count;
 let $status;
 let $list;
 let $listWrap;
-let $foldersList;
+let $breadcrumb;
 let $createFolderInput;
 let $createFolderBtn;
 let $settingsOpenBtn;
@@ -62,6 +68,8 @@ let $bookmarkImportHtmlBtn;
 let $bookmarkJsonInput;
 let $bookmarkHtmlInput;
 let $loadingMoreState;
+let $openNewTabToggle;
+let $pageSizeSelect;
 
 $(document).ready(async () => {
   cacheDom();
@@ -70,8 +78,34 @@ $(document).ready(async () => {
 });
 
 async function loadAll() {
+  await loadSettings();
   await loadFolders();
   await loadBookmarks();
+}
+
+async function loadSettings() {
+  try {
+    const settings = await getSettings();
+    state.openInNewTab = settings.openInNewTab;
+    state.pageSize = settings.pageSize;
+  } catch (error) {
+    console.error('Error loading settings:', error);
+    const defaults = getDefaultSettings();
+    state.openInNewTab = defaults.openInNewTab;
+    state.pageSize = defaults.pageSize;
+  }
+
+  syncSettingsControls();
+}
+
+function syncSettingsControls() {
+  if ($openNewTabToggle) {
+    $openNewTabToggle.prop('checked', state.openInNewTab);
+  }
+
+  if ($pageSizeSelect) {
+    $pageSizeSelect.val(String(state.pageSize));
+  }
 }
 
 function cacheDom() {
@@ -80,7 +114,7 @@ function cacheDom() {
   $status = $('#bookmark-status');
   $list = $('#bookmarks-list');
   $listWrap = $('#bookmark-scroll-wrap');
-  $foldersList = $('#folders-list');
+  $breadcrumb = $('#folder-breadcrumb');
   $createFolderInput = $('#create-folder-input');
   $createFolderBtn = $('#create-folder-btn');
   $settingsOpenBtn = $('#settings-open-btn');
@@ -109,6 +143,8 @@ function cacheDom() {
   $bookmarkJsonInput = $('#bookmark-json-input');
   $bookmarkHtmlInput = $('#bookmark-html-input');
   $loadingMoreState = $('#loading-more-state');
+  $openNewTabToggle = $('#open-new-tab-toggle');
+  $pageSizeSelect = $('#page-size-select');
 }
 
 function bindEvents() {
@@ -128,11 +164,36 @@ function bindEvents() {
 
   $listWrap.on('scroll', handleListScroll);
 
-  $foldersList.on('click', '[data-folder-id]', (event) => {
+  $list.on('click', '[data-action="open-folder"]', (event) => {
+    const folderId = Number($(event.currentTarget).data('folder-id'));
+
+    if (!Number.isInteger(folderId)) {
+      return;
+    }
+
+    navigateToFolder(folderId);
+  });
+
+  $list.on('click', '[data-action="open-link"]', async (event) => {
+    event.preventDefault();
+    const url = String($(event.currentTarget).data('url') ?? '').trim();
+
+    if (!url) {
+      return;
+    }
+
+    try {
+      await openBookmarkUrl(url, state.openInNewTab);
+    } catch (error) {
+      console.error('Error opening url:', error);
+      setError('Unable to open this link right now.');
+    }
+  });
+
+  $breadcrumb.on('click', '[data-folder-id]', (event) => {
     const folderIdRaw = String($(event.currentTarget).data('folder-id'));
-    state.currentFolderId = folderIdRaw === 'all' ? null : Number(folderIdRaw);
-    loadBookmarks();
-    renderFolders();
+    const folderId = folderIdRaw === 'all' ? null : Number(folderIdRaw);
+    navigateToFolder(folderId);
   });
 
   $createFolderBtn.on('click', createFolderFromInput);
@@ -146,6 +207,51 @@ function bindEvents() {
   $settingsOpenBtn.on('click', openSettingsDrawer);
   $settingsClose.on('click', closeSettingsDrawer);
   $settingsCancel.on('click', closeSettingsDrawer);
+
+  $openNewTabToggle.on('change', async () => {
+    state.openInNewTab = $openNewTabToggle.prop('checked');
+
+    try {
+      await updateSettings({
+        openInNewTab: state.openInNewTab,
+        pageSize: state.pageSize
+      });
+
+      render();
+      setSettingsStatus('Behavior setting saved.', false);
+    } catch (error) {
+      console.error('Error saving openInNewTab setting:', error);
+      setSettingsStatus('Could not save link behavior.', true);
+      $openNewTabToggle.prop('checked', !state.openInNewTab);
+      state.openInNewTab = $openNewTabToggle.prop('checked');
+    }
+  });
+
+  $pageSizeSelect.on('change', async () => {
+    const nextPageSize = Number($pageSizeSelect.val());
+
+    if (!Number.isFinite(nextPageSize)) {
+      return;
+    }
+
+    const previousPageSize = state.pageSize;
+    state.pageSize = Math.min(250, Math.max(1, Math.floor(nextPageSize)));
+
+    try {
+      await updateSettings({
+        openInNewTab: state.openInNewTab,
+        pageSize: state.pageSize
+      });
+
+      await loadBookmarks();
+      setSettingsStatus('Page size updated.', false);
+    } catch (error) {
+      console.error('Error saving page size setting:', error);
+      state.pageSize = previousPageSize;
+      $pageSizeSelect.val(String(previousPageSize));
+      setSettingsStatus('Could not save page size.', true);
+    }
+  });
 
   $list.on('click', '[data-action="edit"]', (event) => {
     const bookmarkId = Number($(event.currentTarget).data('id'));
@@ -179,6 +285,7 @@ function bindEvents() {
         closeDrawer();
       }
 
+      await loadFolders();
       await loadBookmarks();
     } catch (error) {
       console.error('Error deleting bookmark:', error);
@@ -223,10 +330,86 @@ function bindEvents() {
   });
 }
 
+function navigateToFolder(folderId) {
+  const parsedFolderId = folderId === null || folderId === undefined ? null : Number(folderId);
+
+  if (parsedFolderId !== null && !Number.isInteger(parsedFolderId)) {
+    return;
+  }
+
+  state.currentFolderId = parsedFolderId;
+  loadBookmarks();
+  renderBreadcrumb();
+}
+
+async function openBookmarkUrl(url, inNewTab) {
+  return await new Promise((resolve, reject) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const queryError = chrome.runtime?.lastError;
+
+      if (queryError) {
+        reject(new Error(queryError.message));
+        return;
+      }
+
+      const activeTab = tabs?.[0] ?? null;
+
+      if (inNewTab) {
+        chrome.tabs.create({
+          url,
+          index: activeTab && Number.isInteger(activeTab.index) ? activeTab.index + 1 : undefined
+        }, () => {
+          const createError = chrome.runtime?.lastError;
+
+          if (createError) {
+            reject(new Error(createError.message));
+            return;
+          }
+
+          resolve();
+        });
+
+        return;
+      }
+
+      if (activeTab?.id) {
+        chrome.tabs.update(activeTab.id, { url }, () => {
+          const updateError = chrome.runtime?.lastError;
+
+          if (updateError) {
+            reject(new Error(updateError.message));
+            return;
+          }
+
+          resolve();
+        });
+
+        return;
+      }
+
+      chrome.tabs.create({ url }, () => {
+        const createError = chrome.runtime?.lastError;
+
+        if (createError) {
+          reject(new Error(createError.message));
+          return;
+        }
+
+        resolve();
+      });
+    });
+  });
+}
+
 async function loadFolders() {
   try {
     state.folders = await listFolders();
-    renderFolders();
+
+    if (state.currentFolderId !== null && !state.folders.some((folder) => folder.id === state.currentFolderId)) {
+      state.currentFolderId = null;
+    }
+
+    renderBreadcrumb();
   } catch (error) {
     console.error('Error loading folders:', error);
     setError('Unable to load folders right now.');
@@ -320,19 +503,93 @@ async function loadMoreBookmarks() {
 }
 
 async function fetchBookmarkPage({ offset, limit }) {
+  const queryOptions = {
+    rootOnly: !state.query
+  };
+
   if (state.query) {
-    return await searchBookmarksPage(state.query, state.currentFolderId, offset, limit);
+    return await searchBookmarksPage(state.query, state.currentFolderId, offset, limit, queryOptions);
   }
 
   const [items, total] = await Promise.all([
-    listBookmarksPageWithIcons(state.currentFolderId, offset, limit),
-    countBookmarks(state.currentFolderId)
+    listBookmarksPageWithIcons(state.currentFolderId, offset, limit, queryOptions),
+    countBookmarks(state.currentFolderId, queryOptions)
   ]);
 
   return {
     items,
     total
   };
+}
+
+function getCurrentChildFolders() {
+  if (state.query) {
+    return [];
+  }
+
+  const parentId = state.currentFolderId;
+
+  return state.folders
+    .filter((folder) => {
+      const candidateParent = folder.parentId === undefined ? null : folder.parentId;
+      return candidateParent === parentId;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getCurrentFolderPath() {
+  if (state.currentFolderId === null) {
+    return [];
+  }
+
+  const byId = new Map(state.folders.map((folder) => [folder.id, folder]));
+  const path = [];
+  const visited = new Set();
+  let current = byId.get(state.currentFolderId);
+
+  while (current) {
+    if (visited.has(current.id)) {
+      break;
+    }
+
+    visited.add(current.id);
+    path.unshift(current);
+
+    if (current.parentId === null || current.parentId === undefined) {
+      break;
+    }
+
+    current = byId.get(current.parentId);
+  }
+
+  return path;
+}
+
+function renderBreadcrumb() {
+  if (!$breadcrumb) {
+    return;
+  }
+
+  const crumbs = [{ id: null, label: 'All Bookmarks' }];
+  getCurrentFolderPath().forEach((folder) => {
+    crumbs.push({ id: folder.id, label: folder.name });
+  });
+
+  const pieces = [];
+
+  crumbs.forEach((crumb, index) => {
+    const isLast = index === crumbs.length - 1;
+    const idAttr = crumb.id === null ? 'all' : String(crumb.id);
+
+    if (isLast) {
+      pieces.push(`<span class="vm-crumb is-active">${escapeHtml(crumb.label)}</span>`);
+    } else {
+      pieces.push(`<button class="vm-crumb" type="button" data-folder-id="${escapeAttr(idAttr)}">${escapeHtml(crumb.label)}</button>`);
+      pieces.push('<span class="vm-crumb-sep"><i class="fas fa-chevron-right"></i></span>');
+    }
+  });
+
+  $breadcrumb.html(pieces.join(''));
 }
 
 function handleListScroll() {
@@ -356,12 +613,13 @@ function handleListScroll() {
 function render() {
   $count.text(state.totalBookmarks);
   $status.text(getStatusLabel());
-  renderFolders();
+  renderBreadcrumb();
 
   $loadingState.toggleClass('is-hidden', !state.loading);
   $errorState.toggleClass('is-hidden', !state.error);
 
-  const shouldShowEmpty = !state.loading && !state.error && state.bookmarks.length === 0;
+  const foldersInView = getCurrentChildFolders();
+  const shouldShowEmpty = !state.loading && !state.error && foldersInView.length === 0 && state.bookmarks.length === 0;
   $emptyState.toggleClass('is-hidden', !shouldShowEmpty);
   $loadingMoreState.toggleClass('is-hidden', !state.loadingMore);
 
@@ -371,6 +629,23 @@ function render() {
   }
 
   $list.empty();
+
+  foldersInView.forEach((folder) => {
+    const item = $(`
+      <article class="vm-card vm-folder-row" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button">
+        <div class="vm-card-head">
+          <div class="vm-icon"><i class="fas fa-folder"></i></div>
+          <div class="vm-card-body">
+            <div class="vm-bookmark-title">${escapeHtml(folder.name)}</div>
+            <div class="vm-folder-subtext">${folder.bookmarkCount} bookmarks</div>
+          </div>
+          <span class="icon has-text-grey-light"><i class="fas fa-chevron-right"></i></span>
+        </div>
+      </article>
+    `);
+
+    $list.append(item);
+  });
 
   state.bookmarks.forEach((bookmark) => {
     const iconHtml = bookmark.icon
@@ -382,15 +657,15 @@ function render() {
         <div class="vm-card-head">
           <div class="vm-icon">${iconHtml}</div>
           <div class="vm-card-body">
-            <a class="vm-bookmark-title" href="${escapeAttr(bookmark.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(bookmark.title)}</a>
+            <a class="vm-bookmark-title" href="${escapeAttr(bookmark.url)}" data-action="open-link" data-url="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.title)}</a>
             <div class="vm-bookmark-url">${escapeHtml(bookmark.url)}</div>
           </div>
         </div>
 
         <div class="vm-card-actions">
-          <a class="button is-small is-success is-light" href="${escapeAttr(bookmark.url)}" target="_blank" rel="noreferrer noopener">
+          <a class="button is-small is-success is-light" href="${escapeAttr(bookmark.url)}" data-action="open-link" data-url="${escapeAttr(bookmark.url)}">
             <span class="icon is-small"><i class="fas fa-external-link-alt"></i></span>
-            <span>Open</span>
+            <span>${state.openInNewTab ? 'Open New Tab' : 'Open Here'}</span>
           </a>
           <button class="button is-small vm-link-button" type="button" data-action="edit" data-id="${bookmark.id}">
             <span class="icon is-small"><i class="fas fa-pen"></i></span>
@@ -408,39 +683,6 @@ function render() {
   });
 }
 
-function renderFolders() {
-  if (!$foldersList) {
-    return;
-  }
-
-  const current = state.currentFolderId;
-  const folderChips = [];
-
-  folderChips.push(`
-    <button class="vm-folder-pill${current === null ? ' is-active' : ''}" type="button" data-folder-id="all">
-      <span class="vm-folder-left">
-        <i class="fas fa-folder-open"></i>
-        <span class="vm-folder-name">All Bookmarks</span>
-      </span>
-      <span class="vm-folder-count">${state.folders.reduce((sum, folder) => sum + folder.bookmarkCount, 0)}</span>
-    </button>
-  `);
-
-  state.folders.forEach((folder) => {
-    folderChips.push(`
-      <button class="vm-folder-pill${current === folder.id ? ' is-active' : ''}" type="button" data-folder-id="${folder.id}">
-        <span class="vm-folder-left">
-          <i class="fas fa-folder"></i>
-          <span class="vm-folder-name">${escapeHtml(folder.name)}</span>
-        </span>
-        <span class="vm-folder-count">${folder.bookmarkCount}</span>
-      </button>
-    `);
-  });
-
-  $foldersList.html(folderChips.join(''));
-}
-
 function getStatusLabel() {
   if (state.loading) {
     return 'Loading bookmarks';
@@ -454,9 +696,11 @@ function getStatusLabel() {
     return `Filtered by "${state.query}" (${state.bookmarks.length}/${state.totalBookmarks})`;
   }
 
-  if (state.currentFolderId !== null) {
-    const folder = state.folders.find((item) => item.id === state.currentFolderId);
-    return folder ? `Folder: ${folder.name}` : 'Folder view';
+  const path = getCurrentFolderPath();
+
+  if (path.length > 0) {
+    const label = path.map((item) => item.name).join(' / ');
+    return `Folder: ${label}`;
   }
 
   if (state.hasMore) {
@@ -510,6 +754,7 @@ function openSettingsDrawer() {
   $settingsDrawer.attr('aria-hidden', 'false');
   $settingsDrawer.addClass('is-open');
   $drawerBackdrop.addClass('is-open');
+  syncSettingsControls();
   setSettingsStatus('Choose an action.', false);
 }
 
@@ -564,7 +809,7 @@ async function createFolderFromInput() {
   setStatus('Creating folder...');
 
   try {
-    const folder = await createFolder(folderName);
+    const folder = await createFolder(folderName, state.currentFolderId);
     $createFolderInput.val('');
     await loadFolders();
     state.currentFolderId = folder.id;
@@ -604,6 +849,8 @@ function setSettingsBusy(isBusy) {
   $bookmarkImportChromeBtn.prop('disabled', isBusy);
   $bookmarkImportJsonBtn.prop('disabled', isBusy);
   $bookmarkImportHtmlBtn.prop('disabled', isBusy);
+  $openNewTabToggle.prop('disabled', isBusy);
+  $pageSizeSelect.prop('disabled', isBusy);
 }
 
 async function handleDbExport() {
@@ -865,12 +1112,16 @@ function parseNetscapeBookmarkHtml(html) {
   return result;
 }
 
+function folderMapKey(parentId, name) {
+  return `${parentId === null ? 'root' : parentId}:${name.toLowerCase()}`;
+}
+
 async function importNormalizedBookmarks(items) {
   const folderMap = new Map();
 
   const existingFolders = await listFolders();
   existingFolders.forEach((folder) => {
-    folderMap.set(folder.name.toLowerCase(), folder.id);
+    folderMap.set(folderMapKey(folder.parentId ?? null, folder.name), folder.id);
   });
 
   const summary = {
@@ -921,16 +1172,31 @@ async function resolveFolderId(folderPath, folderMap) {
     return null;
   }
 
-  const cacheKey = normalizedPath.toLowerCase();
+  const segments = normalizedPath
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
 
-  if (folderMap.has(cacheKey)) {
-    return folderMap.get(cacheKey);
+  if (segments.length === 0) {
+    return null;
   }
 
-  const folder = await createFolder(normalizedPath);
-  folderMap.set(cacheKey, folder.id);
+  let parentId = null;
 
-  return folder.id;
+  for (const segment of segments) {
+    const key = folderMapKey(parentId, segment);
+
+    if (folderMap.has(key)) {
+      parentId = folderMap.get(key);
+      continue;
+    }
+
+    const folder = await createFolder(segment, parentId);
+    folderMap.set(key, folder.id);
+    parentId = folder.id;
+  }
+
+  return parentId;
 }
 
 function escapeHtml(value) {

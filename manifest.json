@@ -33,6 +33,7 @@
     "scripting",
     "bookmarks",
     "sidePanel",
-    "webNavigation"
+    "webNavigation",
+    "storage"
   ]
 }
