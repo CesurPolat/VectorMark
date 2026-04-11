@@ -811,26 +811,6 @@ async function toggleFullscreenMode() {
 }
 
 function closePanelWindow() {
-  try {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    }
-  } catch (_error) {
-    // No-op
-  }
-
-  if (chrome?.runtime?.sendMessage) {
-    chrome.runtime.sendMessage({ type: 'close-side-panel' }, () => {
-      const runtimeError = chrome.runtime?.lastError;
-
-      if (runtimeError) {
-        console.error('Error sending close panel message:', runtimeError);
-        window.close();
-      }
-    });
-    return;
-  }
-
   window.close();
 }
 
