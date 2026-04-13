@@ -1,5 +1,7 @@
 import { isUrlExist } from '../services/dbService.js';
 
+var isPanelOpen = false;
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
     console.error('Error setting side panel behavior on install:', error);
@@ -83,6 +85,13 @@ chrome.runtime.onMessage.addListener((message, sender) => {
       return;
     }
 
+    if (isPanelOpen) {
+      isPanelOpen = false;
+      chrome.sidePanel.setOptions({enabled: false});
+      return chrome.sidePanel.setOptions({enabled: true});
+    }
+
+    isPanelOpen = true;
     return chrome.sidePanel.open({ tabId });
   }
 
