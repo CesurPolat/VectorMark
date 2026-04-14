@@ -6,6 +6,11 @@
   deleteBookmark,
   createFolder,
   listFolders,
+  renameFolder,
+  deleteFolder,
+  recordBookmarkClick,
+  moveBookmarkInCustomOrder,
+  moveFolderInCustomOrder,
   exportDatabase,
   importDatabaseReplace,
   saveOrUpdateBookmarkByUrl,
@@ -41,10 +46,21 @@ const state = {
   pageSize: 40,
   openInNewTab: true,
   iconStorageMode: 'base64',
+  bookmarkSortBy: 'updatedAt',
+  bookmarkSortDir: 'desc',
+  folderSortBy: 'name',
+  folderSortDir: 'asc',
   totalBookmarks: 0,
   hasMore: true,
   loadingMore: false,
-  requestToken: 0
+  requestToken: 0,
+  contextMenu: {
+    isOpen: false,
+    type: null,
+    targetId: null,
+    x: 0,
+    y: 0
+  }
 };
 
 let $searchInput;
@@ -53,8 +69,7 @@ let $status;
 let $list;
 let $listWrap;
 let $breadcrumb;
-let $createFolderInput;
-let $createFolderBtn;
+let $contextMenu;
 let $settingsOpenBtn;
 let $fullscreenToggleBtn;
 let $panelCloseBtn;
@@ -87,6 +102,7 @@ let $loadingMoreState;
 let $openNewTabToggle;
 let $pageSizeSelect;
 let $iconStorageModeSelect;
+let $sharedSortSelect;
 
 $(document).ready(async () => {
   cacheDom();
@@ -106,15 +122,137 @@ async function loadSettings() {
     state.openInNewTab = settings.openInNewTab;
     state.pageSize = settings.pageSize;
     state.iconStorageMode = settings.iconStorageMode;
+    state.bookmarkSortBy = settings.bookmarkSortBy;
+    state.bookmarkSortDir = settings.bookmarkSortDir;
+    state.folderSortBy = settings.folderSortBy;
+    state.folderSortDir = settings.folderSortDir;
   } catch (error) {
     console.error('Error loading settings:', error);
     const defaults = getDefaultSettings();
     state.openInNewTab = defaults.openInNewTab;
     state.pageSize = defaults.pageSize;
     state.iconStorageMode = defaults.iconStorageMode;
+    state.bookmarkSortBy = defaults.bookmarkSortBy;
+    state.bookmarkSortDir = defaults.bookmarkSortDir;
+    state.folderSortBy = defaults.folderSortBy;
+    state.folderSortDir = defaults.folderSortDir;
   }
 
+  normalizeSharedSortState();
+
   syncSettingsControls();
+}
+
+function applySavedSettings(saved) {
+  state.openInNewTab = saved.openInNewTab;
+  state.pageSize = saved.pageSize;
+  state.iconStorageMode = saved.iconStorageMode;
+  state.bookmarkSortBy = saved.bookmarkSortBy;
+  state.bookmarkSortDir = saved.bookmarkSortDir;
+  state.folderSortBy = saved.folderSortBy;
+  state.folderSortDir = saved.folderSortDir;
+  normalizeSharedSortState();
+}
+
+function normalizeSharedSortState() {
+  if (state.bookmarkSortBy === 'customOrder' || state.folderSortBy === 'customOrder') {
+    state.bookmarkSortBy = 'customOrder';
+    state.folderSortBy = 'customOrder';
+    state.bookmarkSortDir = 'asc';
+    state.folderSortDir = 'asc';
+    return;
+  }
+
+  if (state.bookmarkSortBy === 'lastClickedAt') {
+    state.folderSortBy = 'updatedAt';
+  }
+
+  if (state.bookmarkSortBy === 'title') {
+    state.folderSortBy = 'name';
+  }
+}
+
+function toSharedSortSelectionValue() {
+  const bookmarkSortBy = state.bookmarkSortBy;
+  const bookmarkSortDir = state.bookmarkSortDir;
+
+  if (bookmarkSortBy === 'customOrder') {
+    return 'customOrder:asc';
+  }
+
+  if (bookmarkSortBy === 'lastClickedAt') {
+    return `lastOpened:${bookmarkSortDir === 'asc' ? 'asc' : 'desc'}`;
+  }
+
+  if (bookmarkSortBy === 'title') {
+    return `label:${bookmarkSortDir}`;
+  }
+
+  return `updatedAt:${bookmarkSortDir === 'asc' ? 'asc' : 'desc'}`;
+}
+
+function applySharedSortSelection(value) {
+  const nextSort = parseSortSelectionValue(value, 'updatedAt', 'desc');
+
+  if (nextSort.sortBy === 'customOrder') {
+    state.bookmarkSortBy = 'customOrder';
+    state.folderSortBy = 'customOrder';
+    state.bookmarkSortDir = 'asc';
+    state.folderSortDir = 'asc';
+    return;
+  }
+
+  if (nextSort.sortBy === 'lastOpened') {
+    state.bookmarkSortBy = 'lastClickedAt';
+    state.folderSortBy = 'updatedAt';
+    state.bookmarkSortDir = nextSort.sortDir;
+    state.folderSortDir = nextSort.sortDir;
+    return;
+  }
+
+  if (nextSort.sortBy === 'label') {
+    state.bookmarkSortBy = 'title';
+    state.folderSortBy = 'name';
+    state.bookmarkSortDir = nextSort.sortDir;
+    state.folderSortDir = nextSort.sortDir;
+    return;
+  }
+
+  state.bookmarkSortBy = 'updatedAt';
+  state.folderSortBy = 'updatedAt';
+  state.bookmarkSortDir = nextSort.sortDir;
+  state.folderSortDir = nextSort.sortDir;
+}
+
+function parseSortSelectionValue(value, fallbackBy, fallbackDir) {
+  const [rawBy, rawDir] = String(value ?? '').trim().split(':');
+  const sortBy = String(rawBy ?? '').trim() || fallbackBy;
+  const sortDir = rawDir === 'asc' || rawDir === 'desc' ? rawDir : fallbackDir;
+
+  return {
+    sortBy,
+    sortDir
+  };
+}
+
+function getSettingsPayload() {
+  return {
+    openInNewTab: state.openInNewTab,
+    pageSize: state.pageSize,
+    iconStorageMode: state.iconStorageMode,
+    bookmarkSortBy: state.bookmarkSortBy,
+    bookmarkSortDir: state.bookmarkSortDir,
+    folderSortBy: state.folderSortBy,
+    folderSortDir: state.folderSortDir,
+    manualOrderEnabled: false
+  };
+}
+
+async function persistSettings() {
+  const saved = await updateSettings(getSettingsPayload());
+  applySavedSettings(saved);
+  syncSettingsControls();
+  return saved;
 }
 
 function syncSettingsControls() {
@@ -129,6 +267,10 @@ function syncSettingsControls() {
   if ($iconStorageModeSelect) {
     $iconStorageModeSelect.val(state.iconStorageMode === 'url' ? 'url' : 'base64');
   }
+
+  if ($sharedSortSelect) {
+    $sharedSortSelect.val(toSharedSortSelectionValue());
+  }
 }
 
 function cacheDom() {
@@ -138,8 +280,7 @@ function cacheDom() {
   $list = $('#bookmarks-list');
   $listWrap = $('#bookmark-scroll-wrap');
   $breadcrumb = $('#folder-breadcrumb');
-  $createFolderInput = $('#create-folder-input');
-  $createFolderBtn = $('#create-folder-btn');
+  $contextMenu = $('#context-menu');
   $settingsOpenBtn = $('#settings-open-btn');
   $fullscreenToggleBtn = $('#fullscreen-toggle-btn');
   $panelCloseBtn = $('#panel-close-btn');
@@ -172,6 +313,7 @@ function cacheDom() {
   $openNewTabToggle = $('#open-new-tab-toggle');
   $pageSizeSelect = $('#page-size-select');
   $iconStorageModeSelect = $('#icon-storage-mode-select');
+  $sharedSortSelect = $('#shared-sort-select');
 }
 
 function bindEvents() {
@@ -191,6 +333,19 @@ function bindEvents() {
 
   $listWrap.on('scroll', handleListScroll);
 
+  $list.on('click', '[data-action="create-folder-inline"]', async () => {
+    await createFolderFromInput();
+  });
+
+  $list.on('keydown', '#inline-create-folder-input', async (event) => {
+    if (event.key !== 'Enter') {
+      return;
+    }
+
+    event.preventDefault();
+    await createFolderFromInput();
+  });
+
   $list.on('click', '[data-action="open-folder"]', (event) => {
     const folderId = Number($(event.currentTarget).data('folder-id'));
 
@@ -203,6 +358,9 @@ function bindEvents() {
 
   $list.on('click', '[data-action="open-link"]', async (event) => {
     event.preventDefault();
+    hideContextMenu();
+
+    const bookmarkId = Number($(event.currentTarget).data('id'));
     const url = String($(event.currentTarget).data('url') ?? '').trim();
 
     if (!url) {
@@ -211,10 +369,88 @@ function bindEvents() {
 
     try {
       await openBookmarkUrl(url, state.openInNewTab);
+
+      if (Number.isInteger(bookmarkId)) {
+        await recordBookmarkClick(bookmarkId);
+      }
+
+      if (state.bookmarkSortBy === 'lastClickedAt') {
+        await loadBookmarks();
+      }
     } catch (error) {
       console.error('Error opening url:', error);
       setError('Unable to open this link right now.');
     }
+  });
+
+  $list.on('click', '[data-action="open-bookmark-menu"]', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const bookmarkId = Number($(event.currentTarget).data('id'));
+
+    if (!Number.isInteger(bookmarkId)) {
+      return;
+    }
+
+    const trigger = event.currentTarget;
+    const rect = trigger.getBoundingClientRect();
+
+    showContextMenu({
+      type: 'bookmark',
+      targetId: bookmarkId,
+      x: Math.round(rect.right - 4),
+      y: Math.round(rect.bottom + 4)
+    });
+  });
+
+  $list.on('contextmenu', '.vm-folder-row, article[data-bookmark-id]', (event) => {
+    event.preventDefault();
+
+    const $target = $(event.currentTarget);
+
+    if ($target.hasClass('vm-folder-row')) {
+      const folderId = Number($target.data('folder-id'));
+
+      if (Number.isInteger(folderId)) {
+        showContextMenu({
+          type: 'folder',
+          targetId: folderId,
+          x: event.pageX,
+          y: event.pageY
+        });
+      }
+
+      return;
+    }
+
+    const bookmarkId = Number($target.data('bookmark-id'));
+
+    if (Number.isInteger(bookmarkId)) {
+      showContextMenu({
+        type: 'bookmark',
+        targetId: bookmarkId,
+        x: event.pageX,
+        y: event.pageY
+      });
+    }
+  });
+
+  $contextMenu.on('click', '[data-menu-action]', async (event) => {
+    const action = String($(event.currentTarget).data('menu-action') ?? '').trim();
+    await handleContextMenuAction(action);
+  });
+
+  $(document).on('click', (event) => {
+    if ($contextMenu.hasClass('is-hidden')) {
+      return;
+    }
+
+    if ($(event.target).closest('#context-menu').length > 0) {
+      return;
+    }
+
+    hideContextMenu();
   });
 
   $breadcrumb.on('click', '[data-folder-id]', (event) => {
@@ -223,11 +459,16 @@ function bindEvents() {
     navigateToFolder(folderId);
   });
 
-  $createFolderBtn.on('click', createFolderFromInput);
-  $createFolderInput.on('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      createFolderFromInput();
+  $sharedSortSelect.on('change', async () => {
+    try {
+      applySharedSortSelection($sharedSortSelect.val());
+      await persistSettings();
+      await loadFolders();
+      await loadBookmarks();
+      setStatus('Sort updated.');
+    } catch (error) {
+      console.error('Error saving shared sort:', error);
+      setError('Could not save shared sort setting.');
     }
   });
 
@@ -242,16 +483,7 @@ function bindEvents() {
     state.openInNewTab = nextOpenInNewTab;
 
     try {
-      const saved = await updateSettings({
-        openInNewTab: state.openInNewTab,
-        pageSize: state.pageSize,
-        iconStorageMode: state.iconStorageMode
-      });
-
-      state.openInNewTab = saved.openInNewTab;
-      state.pageSize = saved.pageSize;
-      state.iconStorageMode = saved.iconStorageMode;
-      syncSettingsControls();
+      await persistSettings();
 
       render();
       setSettingsStatus('Behavior setting saved.', false);
@@ -274,16 +506,7 @@ function bindEvents() {
     state.pageSize = Math.min(250, Math.max(1, Math.floor(nextPageSize)));
 
     try {
-      const saved = await updateSettings({
-        openInNewTab: state.openInNewTab,
-        pageSize: state.pageSize,
-        iconStorageMode: state.iconStorageMode
-      });
-
-      state.openInNewTab = saved.openInNewTab;
-      state.pageSize = saved.pageSize;
-      state.iconStorageMode = saved.iconStorageMode;
-      syncSettingsControls();
+      await persistSettings();
 
       await loadBookmarks();
       setSettingsStatus('Page size updated.', false);
@@ -301,16 +524,7 @@ function bindEvents() {
     state.iconStorageMode = nextMode;
 
     try {
-      const saved = await updateSettings({
-        openInNewTab: state.openInNewTab,
-        pageSize: state.pageSize,
-        iconStorageMode: state.iconStorageMode
-      });
-
-      state.openInNewTab = saved.openInNewTab;
-      state.pageSize = saved.pageSize;
-      state.iconStorageMode = saved.iconStorageMode;
-      syncSettingsControls();
+      await persistSettings();
       setSettingsStatus('Icon storage mode saved.', false);
     } catch (error) {
       console.error('Error saving icon storage mode:', error);
@@ -321,6 +535,7 @@ function bindEvents() {
   });
 
   $list.on('click', '[data-action="edit"]', (event) => {
+    hideContextMenu();
     const bookmarkId = Number($(event.currentTarget).data('id'));
     const bookmark = state.bookmarks.find((item) => item.id === bookmarkId);
 
@@ -330,6 +545,7 @@ function bindEvents() {
   });
 
   $list.on('click', '[data-action="delete"]', async (event) => {
+    hideContextMenu();
     const bookmarkId = Number($(event.currentTarget).data('id'));
     const bookmark = state.bookmarks.find((item) => item.id === bookmarkId);
 
@@ -337,23 +553,9 @@ function bindEvents() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete "${bookmark.title}"?`);
-
-    if (!confirmed) {
-      return;
-    }
-
-    setStatus('Deleting bookmark...');
-
     try {
-      await deleteBookmark(bookmarkId);
-
-      if (state.selectedBookmark && state.selectedBookmark.id === bookmarkId) {
-        closeDrawer();
-      }
-
-      await loadFolders();
-      await loadBookmarks();
+      setStatus('Deleting bookmark...');
+      await handleDeleteBookmark(bookmark);
     } catch (error) {
       console.error('Error deleting bookmark:', error);
       setError('Unable to delete this bookmark right now.');
@@ -387,6 +589,8 @@ function bindEvents() {
 
   $(document).on('keydown', (event) => {
     if (event.key === 'Escape') {
+      hideContextMenu();
+
       if (state.activeDrawer === 'bookmark') {
         closeDrawer();
       }
@@ -399,6 +603,7 @@ function bindEvents() {
 }
 
 function navigateToFolder(folderId) {
+  hideContextMenu();
   const parsedFolderId = folderId === null || folderId === undefined ? null : Number(folderId);
 
   if (parsedFolderId !== null && !Number.isInteger(parsedFolderId)) {
@@ -471,7 +676,10 @@ async function openBookmarkUrl(url, inNewTab) {
 
 async function loadFolders() {
   try {
-    state.folders = await listFolders();
+    state.folders = await listFolders({
+      sortBy: state.folderSortBy,
+      sortDir: state.folderSortDir
+    });
 
     if (state.currentFolderId !== null && !state.folders.some((folder) => folder.id === state.currentFolderId)) {
       state.currentFolderId = null;
@@ -572,7 +780,9 @@ async function loadMoreBookmarks() {
 
 async function fetchBookmarkPage({ offset, limit }) {
   const queryOptions = {
-    rootOnly: !state.query
+    rootOnly: !state.query,
+    sortBy: state.bookmarkSortBy,
+    sortDir: state.bookmarkSortDir
   };
 
   if (state.query) {
@@ -601,8 +811,7 @@ function getCurrentChildFolders() {
     .filter((folder) => {
       const candidateParent = folder.parentId === undefined ? null : folder.parentId;
       return candidateParent === parentId;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+    });
 }
 
 function getCurrentFolderPath() {
@@ -698,6 +907,20 @@ function render() {
 
   $list.empty();
 
+  if (!state.query) {
+    const createRow = $(`
+      <article class="vm-folder-create-inline" role="group" aria-label="Create folder inline">
+        <span class="vm-create-icon" aria-hidden="true"><i class="fas fa-folder-plus"></i></span>
+        <input id="inline-create-folder-input" class="input" type="text" placeholder="New folder" maxlength="60" />
+        <button class="button vm-folder-create-submit" type="button" aria-label="Create folder" data-action="create-folder-inline">
+          <span class="icon"><i class="fas fa-plus"></i></span>
+        </button>
+      </article>
+    `);
+
+    $list.append(createRow);
+  }
+
   foldersInView.forEach((folder) => {
     const item = $(`
       <article class="vm-card vm-folder-row" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button">
@@ -721,27 +944,15 @@ function render() {
       : '<i class="fas fa-bookmark"></i>';
 
     const item = $(`
-      <article class="vm-card${state.selectedBookmark && state.selectedBookmark.id === bookmark.id ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}">
+      <article class="vm-card vm-bookmark-row${state.selectedBookmark && state.selectedBookmark.id === bookmark.id ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}">
         <div class="vm-card-head">
           <div class="vm-icon">${iconHtml}</div>
           <div class="vm-card-body">
-            <a class="vm-bookmark-title" href="${escapeAttr(bookmark.url)}" data-action="open-link" data-url="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.title)}</a>
-            <div class="vm-bookmark-url">${escapeHtml(bookmark.url)}</div>
+            <a class="vm-bookmark-title" href="${escapeAttr(bookmark.url)}" title="${escapeAttr(bookmark.title)}" data-action="open-link" data-id="${bookmark.id}" data-url="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.title)}</a>
+            <div class="vm-bookmark-url" title="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.url)}</div>
           </div>
-        </div>
-
-        <div class="vm-card-actions">
-          <a class="button is-small is-success is-light" href="${escapeAttr(bookmark.url)}" data-action="open-link" data-url="${escapeAttr(bookmark.url)}">
-            <span class="icon is-small"><i class="fas fa-external-link-alt"></i></span>
-            <span>${state.openInNewTab ? 'Open New Tab' : 'Open Here'}</span>
-          </a>
-          <button class="button is-small vm-link-button" type="button" data-action="edit" data-id="${bookmark.id}">
-            <span class="icon is-small"><i class="fas fa-pen"></i></span>
-            <span>Edit</span>
-          </button>
-          <button class="button is-small is-danger is-light" type="button" data-action="delete" data-id="${bookmark.id}">
-            <span class="icon is-small"><i class="fas fa-trash"></i></span>
-            <span>Delete</span>
+          <button class="button vm-link-button vm-row-menu-trigger" type="button" aria-label="Open bookmark menu" data-action="open-bookmark-menu" data-id="${bookmark.id}">
+            <span class="icon is-small"><i class="fas fa-ellipsis-v"></i></span>
           </button>
         </div>
       </article>
@@ -749,6 +960,258 @@ function render() {
 
     $list.append(item);
   });
+}
+
+function setContextMenuState(nextState) {
+  state.contextMenu = {
+    ...state.contextMenu,
+    ...nextState
+  };
+}
+
+function renderContextMenuItems() {
+  if (!$contextMenu) {
+    return;
+  }
+
+  if (!state.contextMenu.isOpen) {
+    $contextMenu.addClass('is-hidden');
+    $contextMenu.attr('aria-hidden', 'true');
+    $contextMenu.empty();
+    return;
+  }
+
+  const menuItems = state.contextMenu.type === 'folder'
+    ? [
+      { action: 'open-folder', label: 'Open folder', icon: 'fas fa-folder-open' },
+      { action: 'rename-folder', label: 'Rename folder', icon: 'fas fa-pen' },
+      { action: 'move-folder-top', label: 'Move folder to top (custom)', icon: 'fas fa-angle-double-up' },
+      { action: 'move-folder-bottom', label: 'Move folder to bottom (custom)', icon: 'fas fa-angle-double-down' },
+      { separator: true },
+      { action: 'delete-folder', label: 'Delete folder', danger: true, icon: 'fas fa-trash' }
+    ]
+    : [
+      { action: 'open-bookmark', label: state.openInNewTab ? 'Open in new tab' : 'Open here', icon: 'fas fa-external-link-alt' },
+      { action: 'edit-bookmark', label: 'Edit bookmark', icon: 'fas fa-pen' },
+      { action: 'copy-url', label: 'Copy URL', icon: 'fas fa-link' },
+      { action: 'copy-title', label: 'Copy title', icon: 'fas fa-font' },
+      { action: 'move-bookmark-top', label: 'Move bookmark to top (custom)', icon: 'fas fa-angle-double-up' },
+      { action: 'move-bookmark-bottom', label: 'Move bookmark to bottom (custom)', icon: 'fas fa-angle-double-down' },
+      { separator: true },
+      { action: 'delete-bookmark', label: 'Delete bookmark', danger: true, icon: 'fas fa-trash' }
+    ];
+
+  const html = menuItems.map((item) => {
+    if (item.separator) {
+      return '<div class="vm-menu-separator"></div>';
+    }
+
+    return `
+      <button class="vm-menu-item${item.danger ? ' is-danger' : ''}" type="button" data-menu-action="${escapeAttr(item.action)}">
+        <span class="icon" aria-hidden="true"><i class="${escapeAttr(item.icon || 'fas fa-circle')}"></i></span>
+        <span class="vm-menu-text">${escapeHtml(item.label)}</span>
+      </button>
+    `;
+  }).join('');
+
+  $contextMenu.html(html);
+  $contextMenu.removeClass('is-hidden');
+  $contextMenu.attr('aria-hidden', 'false');
+
+  const menuElement = $contextMenu.get(0);
+
+  if (!menuElement) {
+    return;
+  }
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const menuRect = menuElement.getBoundingClientRect();
+  const maxLeft = Math.max(4, viewportWidth - menuRect.width - 4);
+  const maxTop = Math.max(4, viewportHeight - menuRect.height - 4);
+  const safeLeft = Math.max(4, Math.min(state.contextMenu.x, maxLeft));
+  const safeTop = Math.max(4, Math.min(state.contextMenu.y, maxTop));
+
+  $contextMenu.css({
+    left: `${safeLeft}px`,
+    top: `${safeTop}px`
+  });
+}
+
+function showContextMenu({ type, targetId, x, y }) {
+  setContextMenuState({
+    isOpen: true,
+    type,
+    targetId,
+    x,
+    y
+  });
+  renderContextMenuItems();
+}
+
+function hideContextMenu() {
+  if (!state.contextMenu.isOpen) {
+    return;
+  }
+
+  setContextMenuState({
+    isOpen: false,
+    type: null,
+    targetId: null
+  });
+  renderContextMenuItems();
+}
+
+async function copyTextToClipboard(value) {
+  const text = String(value ?? '');
+
+  if (!text) {
+    return false;
+  }
+
+  if (navigator?.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+
+  const input = document.createElement('textarea');
+  input.value = text;
+  document.body.append(input);
+  input.select();
+  document.execCommand('copy');
+  input.remove();
+  return true;
+}
+
+async function handleDeleteBookmark(bookmark) {
+  const confirmed = window.confirm(`Delete "${bookmark.title}"?`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  await deleteBookmark(bookmark.id);
+
+  if (state.selectedBookmark && state.selectedBookmark.id === bookmark.id) {
+    closeDrawer();
+  }
+
+  await loadFolders();
+  await loadBookmarks();
+}
+
+async function handleContextMenuAction(action) {
+  const menuType = state.contextMenu.type;
+  const targetId = state.contextMenu.targetId;
+  hideContextMenu();
+
+  if (!menuType || !Number.isInteger(targetId)) {
+    return;
+  }
+
+  try {
+    if (menuType === 'bookmark') {
+      const bookmark = state.bookmarks.find((item) => item.id === targetId);
+
+      if (!bookmark) {
+        return;
+      }
+
+      if (action === 'open-bookmark') {
+        await openBookmarkUrl(bookmark.url, state.openInNewTab);
+        await recordBookmarkClick(bookmark.id);
+
+        if (state.bookmarkSortBy === 'lastClickedAt') {
+          await loadBookmarks();
+        }
+
+        return;
+      }
+
+      if (action === 'edit-bookmark') {
+        openDrawer(bookmark);
+        return;
+      }
+
+      if (action === 'copy-url') {
+        await copyTextToClipboard(bookmark.url);
+        setStatus('Bookmark URL copied.');
+        return;
+      }
+
+      if (action === 'copy-title') {
+        await copyTextToClipboard(bookmark.title);
+        setStatus('Bookmark title copied.');
+        return;
+      }
+
+      if (action === 'move-bookmark-top' || action === 'move-bookmark-bottom') {
+        const position = action === 'move-bookmark-top' ? 'top' : 'bottom';
+        await moveBookmarkInCustomOrder(bookmark.id, position);
+
+        setStatus('Custom order updated.');
+
+        await loadBookmarks();
+        return;
+      }
+
+      if (action === 'delete-bookmark') {
+        await handleDeleteBookmark(bookmark);
+      }
+
+      return;
+    }
+
+    const folder = state.folders.find((item) => item.id === targetId);
+
+    if (!folder) {
+      return;
+    }
+
+    if (action === 'open-folder') {
+      navigateToFolder(folder.id);
+      return;
+    }
+
+    if (action === 'rename-folder') {
+      const nextName = window.prompt('Folder name', folder.name);
+
+      if (!nextName) {
+        return;
+      }
+
+      await renameFolder(folder.id, nextName);
+      await loadFolders();
+      render();
+      return;
+    }
+
+    if (action === 'move-folder-top' || action === 'move-folder-bottom') {
+      const position = action === 'move-folder-top' ? 'top' : 'bottom';
+      await moveFolderInCustomOrder(folder.id, position);
+
+      setStatus('Custom order updated.');
+
+      await loadFolders();
+      render();
+      return;
+    }
+
+    if (action === 'delete-folder') {
+      const confirmed = window.confirm(`Delete folder "${folder.name}" and move its bookmarks to root?`);
+
+      if (!confirmed) {
+        return;
+      }
+
+      await deleteFolder(folder.id, null);
+      await loadFolders();
+      await loadBookmarks();
+    }
+  } catch (error) {
+    console.error('Context menu action failed:', error);
+    setError(error?.message || 'Context menu action failed.');
+  }
 }
 
 function getStatusLabel() {
@@ -820,9 +1283,7 @@ async function openSettingsDrawer() {
 
   try {
     const latest = await getSettings();
-    state.openInNewTab = latest.openInNewTab;
-    state.pageSize = latest.pageSize;
-    state.iconStorageMode = latest.iconStorageMode;
+    applySavedSettings(latest);
   } catch (error) {
     console.error('Error refreshing settings before opening drawer:', error);
   }
@@ -898,7 +1359,8 @@ async function saveBookmark() {
 }
 
 async function createFolderFromInput() {
-  const folderName = $createFolderInput.val().trim();
+  const $inlineInput = $('#inline-create-folder-input');
+  const folderName = String($inlineInput.val() ?? '').trim();
 
   if (!folderName) {
     setError('Folder name is required.');
@@ -909,7 +1371,7 @@ async function createFolderFromInput() {
 
   try {
     const folder = await createFolder(folderName, state.currentFolderId);
-    $createFolderInput.val('');
+    $inlineInput.val('');
     await loadFolders();
     state.currentFolderId = folder.id;
     await loadBookmarks();

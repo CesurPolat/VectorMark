@@ -57,17 +57,208 @@ async function deleteIconIfUnused(iconId) {
 
 export { resolveBookmarkIconPayload, resolveBookmarkIconData };
 
+const BOOKMARK_SORT_FIELDS = new Set(['customOrder', 'updatedAt', 'createdAt', 'lastClickedAt', 'title', 'id']);
+const FOLDER_SORT_FIELDS = new Set(['customOrder', 'updatedAt', 'createdAt', 'name', 'bookmarkCount', 'id']);
+
+function getNowTimestamp() {
+  return Date.now();
+}
+
+function normalizeTimestamp(value, fallback) {
+  const parsed = Number(value);
+
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.floor(parsed);
+  }
+
+  return fallback;
+}
+
+function normalizeNullableTimestamp(value) {
+  const parsed = Number(value);
+
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return Math.floor(parsed);
+  }
+
+  return null;
+}
+
+function normalizeCustomOrder(value, fallback = 0) {
+  const parsed = Number(value);
+
+  if (Number.isFinite(parsed)) {
+    return Math.floor(parsed);
+  }
+
+  return fallback;
+}
+
+function normalizeBookmarkFolderId(folderId) {
+  if (folderId === null || folderId === undefined) {
+    return null;
+  }
+
+  const parsed = Number(folderId);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function normalizeSortDirection(direction, fallback = 'desc') {
+  return direction === 'asc' || direction === 'desc' ? direction : fallback;
+}
+
+function normalizeBookmarkSortBy(sortBy, fallback = 'updatedAt') {
+  if (sortBy === 'manual') {
+    return 'customOrder';
+  }
+
+  return BOOKMARK_SORT_FIELDS.has(sortBy) ? sortBy : fallback;
+}
+
+function normalizeFolderSortBy(sortBy, fallback = 'name') {
+  if (sortBy === 'manual') {
+    return 'customOrder';
+  }
+
+  return FOLDER_SORT_FIELDS.has(sortBy) ? sortBy : fallback;
+}
+
+function getBookmarkSortOptions(options = {}) {
+  const sortBy = normalizeBookmarkSortBy(String(options?.sortBy ?? '').trim() || 'updatedAt');
+  const fallbackDirection = sortBy === 'title' || sortBy === 'customOrder' ? 'asc' : 'desc';
+
+  return {
+    sortBy,
+    sortDir: normalizeSortDirection(options?.sortDir, fallbackDirection)
+  };
+}
+
+function getFolderSortOptions(options = {}) {
+  const sortBy = normalizeFolderSortBy(String(options?.sortBy ?? '').trim() || 'name');
+  const fallbackDirection = sortBy === 'name' || sortBy === 'customOrder' ? 'asc' : 'desc';
+
+  return {
+    sortBy,
+    sortDir: normalizeSortDirection(options?.sortDir, fallbackDirection)
+  };
+}
+
+function compareValues(left, right, direction = 'asc') {
+  const dir = direction === 'asc' ? 1 : -1;
+
+  if (left === right) {
+    return 0;
+  }
+
+  if (left === null || left === undefined) {
+    return 1;
+  }
+
+  if (right === null || right === undefined) {
+    return -1;
+  }
+
+  if (typeof left === 'string' || typeof right === 'string') {
+    return String(left).localeCompare(String(right)) * dir;
+  }
+
+  return (Number(left) - Number(right)) * dir;
+}
+
+function sortBookmarkRecords(records, options = {}) {
+  const { sortBy, sortDir } = getBookmarkSortOptions(options);
+
+  return [...records].sort((left, right) => {
+    const primary = compareValues(left?.[sortBy], right?.[sortBy], sortDir);
+
+    if (primary !== 0) {
+      return primary;
+    }
+
+    const updatedFallback = compareValues(left?.updatedAt, right?.updatedAt, 'desc');
+
+    if (updatedFallback !== 0) {
+      return updatedFallback;
+    }
+
+    return compareValues(left?.id, right?.id, 'desc');
+  });
+}
+
+function sortFolderRecords(records, options = {}) {
+  const { sortBy, sortDir } = getFolderSortOptions(options);
+
+  return [...records].sort((left, right) => {
+    const primary = compareValues(left?.[sortBy], right?.[sortBy], sortDir);
+
+    if (primary !== 0) {
+      return primary;
+    }
+
+    return compareValues(left?.id, right?.id, 'asc');
+  });
+}
+
+async function getNextBookmarkCustomOrder(folderId = null) {
+  const normalizedFolderId = normalizeBookmarkFolderId(folderId);
+  const scopedBookmarks = normalizedFolderId === null
+    ? await db.bookmarks.toCollection().filter(isRootBookmark).toArray()
+    : await db.bookmarks.where('folderId').equals(normalizedFolderId).toArray();
+
+  const maxOrder = scopedBookmarks.reduce((max, bookmark) => {
+    return Math.max(max, normalizeCustomOrder(bookmark?.customOrder, 0));
+  }, 0);
+
+  return maxOrder + 1;
+}
+
+async function getNextFolderCustomOrder(parentId = null) {
+  const normalizedParentId = normalizeParentId(parentId);
+  const scopedFolders = await getFoldersByParentId(normalizedParentId);
+
+  const maxOrder = scopedFolders.reduce((max, folder) => {
+    return Math.max(max, normalizeCustomOrder(folder?.customOrder, 0));
+  }, 0);
+
+  return maxOrder + 1;
+}
+
+async function getFoldersByParentId(parentId = null) {
+  const normalizedParentId = normalizeParentId(parentId);
+
+  if (normalizedParentId === null) {
+    return await db.folders
+      .toCollection()
+      .filter((folder) => folder.parentId === null || folder.parentId === undefined)
+      .toArray();
+  }
+
+  return await db.folders.where('parentId').equals(normalizedParentId).toArray();
+}
+
 // Add a bookmark with a new icon
 export async function addBookmarkWithIcon(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.icons, db.bookmarks, async () => {
+      const now = getNowTimestamp();
+      const normalizedFolderId = normalizeBookmarkFolderId(folderId);
       const iconId = await getOrCreateIconId(data);
+      const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
 
       const bookmarkId = await db.bookmarks.add({
         title,
         url,
-        folderId,
-        iconId
+        folderId: normalizedFolderId,
+        iconId,
+        createdAt: now,
+        updatedAt: now,
+        lastClickedAt: null,
+        customOrder
       });
 
       return bookmarkId;
@@ -91,6 +282,21 @@ export async function updateBookmark(bookmarkId, updates) {
         ...currentBookmark,
         ...updates
       };
+
+      const hasFolderUpdate = Object.prototype.hasOwnProperty.call(updates || {}, 'folderId');
+
+      if (hasFolderUpdate) {
+        nextBookmark.folderId = normalizeBookmarkFolderId(updates.folderId);
+
+        if (nextBookmark.folderId !== currentBookmark.folderId && !Object.prototype.hasOwnProperty.call(updates || {}, 'customOrder')) {
+          nextBookmark.customOrder = await getNextBookmarkCustomOrder(nextBookmark.folderId);
+        }
+      }
+
+      nextBookmark.createdAt = normalizeTimestamp(nextBookmark.createdAt, getNowTimestamp());
+      nextBookmark.updatedAt = getNowTimestamp();
+      nextBookmark.lastClickedAt = normalizeNullableTimestamp(nextBookmark.lastClickedAt);
+      nextBookmark.customOrder = normalizeCustomOrder(nextBookmark.customOrder, currentBookmark.id || 0);
 
       delete nextBookmark.id;
 
@@ -196,7 +402,9 @@ function toSafePageSize(value, fallback = 40) {
 
 function toQueryOptions(options = {}) {
   return {
-    rootOnly: options?.rootOnly === true
+    rootOnly: options?.rootOnly === true,
+    sortBy: options?.sortBy,
+    sortDir: options?.sortDir
   };
 }
 
@@ -204,32 +412,48 @@ function isRootBookmark(bookmark) {
   return bookmark?.folderId === null || bookmark?.folderId === undefined;
 }
 
-function getFolderBookmarkCollection(folderId = null, options = {}) {
+function normalizeBookmarkRecord(record = {}) {
+  const now = getNowTimestamp();
+  const createdAt = normalizeTimestamp(record.createdAt, now);
+  const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
+
+  return {
+    ...record,
+    folderId: normalizeBookmarkFolderId(record.folderId),
+    createdAt,
+    updatedAt,
+    lastClickedAt: normalizeNullableTimestamp(record.lastClickedAt),
+    customOrder: normalizeCustomOrder(record.customOrder, Number(record.id) || 0)
+  };
+}
+
+async function getFolderBookmarkRecords(folderId = null, options = {}) {
   const queryOptions = toQueryOptions(options);
 
   if (folderId === null) {
     if (queryOptions.rootOnly) {
-      return db.bookmarks
-        .orderBy('id')
-        .reverse()
-        .filter(isRootBookmark);
+      return await db.bookmarks
+        .toCollection()
+        .filter(isRootBookmark)
+        .toArray();
     }
 
-    return db.bookmarks.orderBy('id').reverse();
+    return await db.bookmarks.toArray();
   }
 
-  return db.bookmarks.where('folderId').equals(folderId);
+  return await db.bookmarks.where('folderId').equals(folderId).toArray();
 }
 
 async function attachIcons(bookmarks) {
   return await Promise.all(
     bookmarks.map(async (bookmark) => {
+      const normalizedBookmark = normalizeBookmarkRecord(bookmark);
       const icon = bookmark.iconId
         ? await db.icons.get(bookmark.iconId)
         : null;
 
       return {
-        ...bookmark,
+        ...normalizedBookmark,
         icon
       };
     })
@@ -262,10 +486,9 @@ export async function listBookmarksPageWithIcons(folderId = null, offset = 0, li
     const queryOptions = toQueryOptions(options);
 
     return await db.transaction('r', db.bookmarks, db.icons, async () => {
-      const bookmarks = await getFolderBookmarkCollection(folderId, queryOptions)
-        .offset(safeOffset)
-        .limit(safeLimit)
-        .toArray();
+      const allBookmarks = await getFolderBookmarkRecords(folderId, queryOptions);
+      const sorted = sortBookmarkRecords(allBookmarks, queryOptions);
+      const bookmarks = sorted.slice(safeOffset, safeOffset + safeLimit);
 
       return await attachIcons(bookmarks);
     });
@@ -349,18 +572,14 @@ export async function searchBookmarksPage(query, folderId = null, offset = 0, li
         return true;
       };
 
-      const total = await db.bookmarks
+      const allMatches = await db.bookmarks
         .toCollection()
         .filter(filter)
-        .count();
-
-      const bookmarks = await db.bookmarks
-        .orderBy('id')
-        .reverse()
-        .filter(filter)
-        .offset(safeOffset)
-        .limit(safeLimit)
         .toArray();
+
+      const sorted = sortBookmarkRecords(allMatches, queryOptions);
+      const total = sorted.length;
+      const bookmarks = sorted.slice(safeOffset, safeOffset + safeLimit);
 
       const items = await attachIcons(bookmarks);
 
@@ -414,7 +633,9 @@ export async function isUrlExist(url) {
 export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.bookmarks, db.icons, async () => {
+      const now = getNowTimestamp();
       const normalizedIcon = normalizeIconInput(data);
+      const normalizedFolderId = normalizeBookmarkFolderId(folderId);
       const bookmark = await db.bookmarks
         .where('url')
         .equals(url)
@@ -422,11 +643,16 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
 
       if (!bookmark) {
         const iconId = await getOrCreateIconId(normalizedIcon);
+        const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
         const bookmarkId = await db.bookmarks.add({
           title,
           url,
-          folderId,
-          iconId
+          folderId: normalizedFolderId,
+          iconId,
+          createdAt: now,
+          updatedAt: now,
+          lastClickedAt: null,
+          customOrder
         });
 
         return {
@@ -449,10 +675,16 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
       }
 
       const updates = {
-        title
+        title,
+        updatedAt: now
       };
 
-      if (iconId) {
+      if (normalizedFolderId !== bookmark.folderId) {
+        updates.folderId = normalizedFolderId;
+        updates.customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
+      }
+
+      if (Number.isInteger(iconId)) {
         updates.iconId = iconId;
       }
 
@@ -471,6 +703,217 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
     console.error('Error saving or updating bookmark by url:', error);
     throw error;
   }
+}
+
+export async function recordBookmarkClick(bookmarkId) {
+  try {
+    const parsedBookmarkId = Number(bookmarkId);
+
+    if (!Number.isInteger(parsedBookmarkId) || parsedBookmarkId <= 0) {
+      return false;
+    }
+
+    const clickedAt = getNowTimestamp();
+    const updatedCount = await db.bookmarks.update(parsedBookmarkId, {
+      lastClickedAt: clickedAt
+    });
+
+    return updatedCount > 0;
+  } catch (error) {
+    console.error('Error recording bookmark click:', error);
+    throw error;
+  }
+}
+
+async function applyBookmarkOrder(folderId, orderedIds) {
+  const now = getNowTimestamp();
+  const normalizedFolderId = normalizeBookmarkFolderId(folderId);
+
+  for (let index = 0; index < orderedIds.length; index += 1) {
+    const id = orderedIds[index];
+    await db.bookmarks.update(id, {
+      folderId: normalizedFolderId,
+      customOrder: index + 1,
+      updatedAt: now
+    });
+  }
+}
+
+async function applyFolderOrder(parentId, orderedIds) {
+  const now = getNowTimestamp();
+  const normalizedParentId = normalizeParentId(parentId);
+
+  for (let index = 0; index < orderedIds.length; index += 1) {
+    const id = orderedIds[index];
+    await db.folders.update(id, {
+      parentId: normalizedParentId,
+      customOrder: index + 1,
+      updatedAt: now
+    });
+  }
+}
+
+function reorderByPosition(orderedIds, targetId, position = 'top') {
+  const source = [...orderedIds];
+  const currentIndex = source.indexOf(targetId);
+
+  if (currentIndex < 0) {
+    return source;
+  }
+
+  const [item] = source.splice(currentIndex, 1);
+
+  if (position === 'up') {
+    const nextIndex = Math.max(0, currentIndex - 1);
+    source.splice(nextIndex, 0, item);
+    return source;
+  }
+
+  if (position === 'down') {
+    const nextIndex = Math.min(source.length, currentIndex + 1);
+    source.splice(nextIndex, 0, item);
+    return source;
+  }
+
+  if (position === 'bottom') {
+    source.push(item);
+    return source;
+  }
+
+  source.unshift(item);
+  return source;
+}
+
+export async function moveBookmarkInCustomOrder(bookmarkId, position = 'top') {
+  try {
+    const parsedBookmarkId = Number(bookmarkId);
+
+    if (!Number.isInteger(parsedBookmarkId) || parsedBookmarkId <= 0) {
+      throw new Error('Invalid bookmark id.');
+    }
+
+    return await db.transaction('rw', db.bookmarks, async () => {
+      const bookmark = await db.bookmarks.get(parsedBookmarkId);
+
+      if (!bookmark) {
+        throw new Error('Bookmark not found.');
+      }
+
+      const folderId = normalizeBookmarkFolderId(bookmark.folderId);
+      const scopedBookmarks = folderId === null
+        ? await db.bookmarks.toCollection().filter(isRootBookmark).toArray()
+        : await db.bookmarks.where('folderId').equals(folderId).toArray();
+
+      const orderedIds = sortBookmarkRecords(scopedBookmarks, {
+        sortBy: 'customOrder',
+        sortDir: 'asc'
+      }).map((item) => item.id);
+
+      const reorderedIds = reorderByPosition(orderedIds, parsedBookmarkId, position);
+      await applyBookmarkOrder(folderId, reorderedIds);
+
+      return true;
+    });
+  } catch (error) {
+    console.error('Error moving bookmark in custom order:', error);
+    throw error;
+  }
+}
+
+export async function moveFolderInCustomOrder(folderId, position = 'top') {
+  try {
+    const parsedFolderId = normalizeFolderId(folderId);
+
+    return await db.transaction('rw', db.folders, async () => {
+      const folder = await db.folders.get(parsedFolderId);
+
+      if (!folder) {
+        throw new Error('Folder not found.');
+      }
+
+      const parentId = normalizeParentId(folder.parentId);
+      const siblings = await getFoldersByParentId(parentId);
+      const orderedIds = sortFolderRecords(
+        siblings.map(normalizeFolderRecord),
+        { sortBy: 'customOrder', sortDir: 'asc' }
+      ).map((item) => item.id);
+
+      const reorderedIds = reorderByPosition(orderedIds, parsedFolderId, position);
+      await applyFolderOrder(parentId, reorderedIds);
+
+      return true;
+    });
+  } catch (error) {
+    console.error('Error moving folder in custom order:', error);
+    throw error;
+  }
+}
+
+export async function reorderBookmarksInScope(folderId, orderedBookmarkIds = []) {
+  try {
+    const normalizedFolderId = normalizeBookmarkFolderId(folderId);
+    const orderedIds = ensureArray(orderedBookmarkIds, 'orderedBookmarkIds')
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    return await db.transaction('rw', db.bookmarks, async () => {
+      const scopedBookmarks = normalizedFolderId === null
+        ? await db.bookmarks.toCollection().filter(isRootBookmark).toArray()
+        : await db.bookmarks.where('folderId').equals(normalizedFolderId).toArray();
+
+      const scopedIds = new Set(scopedBookmarks.map((bookmark) => bookmark.id));
+      const scopedOrderedIds = orderedIds.filter((id) => scopedIds.has(id));
+      const missingIds = scopedBookmarks
+        .map((bookmark) => bookmark.id)
+        .filter((id) => !scopedOrderedIds.includes(id));
+
+      await applyBookmarkOrder(normalizedFolderId, [...scopedOrderedIds, ...missingIds]);
+      return true;
+    });
+  } catch (error) {
+    console.error('Error reordering bookmarks in scope:', error);
+    throw error;
+  }
+}
+
+export async function reorderFoldersInScope(parentId, orderedFolderIds = []) {
+  try {
+    const normalizedParentId = normalizeParentId(parentId);
+    const orderedIds = ensureArray(orderedFolderIds, 'orderedFolderIds')
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    return await db.transaction('rw', db.folders, async () => {
+      const siblings = await getFoldersByParentId(normalizedParentId);
+      const siblingIds = new Set(siblings.map((folder) => folder.id));
+      const siblingOrderedIds = orderedIds.filter((id) => siblingIds.has(id));
+      const missingIds = siblings
+        .map((folder) => folder.id)
+        .filter((id) => !siblingOrderedIds.includes(id));
+
+      await applyFolderOrder(normalizedParentId, [...siblingOrderedIds, ...missingIds]);
+      return true;
+    });
+  } catch (error) {
+    console.error('Error reordering folders in scope:', error);
+    throw error;
+  }
+}
+
+export async function listBookmarksPageWithSort(folderId = null, offset = 0, limit = 40, sortBy = 'updatedAt', sortDir = 'desc', options = {}) {
+  return await listBookmarksPageWithIcons(folderId, offset, limit, {
+    ...options,
+    sortBy,
+    sortDir
+  });
+}
+
+export async function listChildFoldersWithSort(parentId = null, sortBy = 'name', sortDir = 'asc', options = {}) {
+  return await listChildFolders(parentId, {
+    ...options,
+    sortBy,
+    sortDir
+  });
 }
 
 function normalizeFolderName(name) {
@@ -496,9 +939,15 @@ function normalizeParentId(parentId) {
 }
 
 function normalizeFolderRecord(folder) {
+  const now = getNowTimestamp();
+  const createdAt = normalizeTimestamp(folder?.createdAt, now);
+
   return {
     ...folder,
-    parentId: normalizeParentId(folder.parentId)
+    parentId: normalizeParentId(folder.parentId),
+    createdAt,
+    updatedAt: normalizeTimestamp(folder?.updatedAt, createdAt),
+    customOrder: normalizeCustomOrder(folder?.customOrder, Number(folder?.id) || 0)
   };
 }
 
@@ -520,6 +969,8 @@ export async function createFolder(name, parentId = null) {
     }
 
     return await db.transaction('rw', db.folders, async () => {
+      const now = getNowTimestamp();
+
       if (normalizedParentId !== null) {
         const parentFolder = await db.folders.get(normalizedParentId);
 
@@ -528,12 +979,9 @@ export async function createFolder(name, parentId = null) {
         }
       }
 
-      const siblingFolders = await db.folders
-        .where('parentId')
-        .equals(normalizedParentId)
-        .toArray();
+      const siblingFoldersSafe = await getFoldersByParentId(normalizedParentId);
 
-      const hasDuplicateName = siblingFolders.some((folder) => {
+      const hasDuplicateName = siblingFoldersSafe.some((folder) => {
         return folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
       });
 
@@ -541,15 +989,23 @@ export async function createFolder(name, parentId = null) {
         throw new Error('A folder with this name already exists in this location.');
       }
 
+      const customOrder = await getNextFolderCustomOrder(normalizedParentId);
+
       const folderId = await db.folders.add({
         name: normalizedName,
-        parentId: normalizedParentId
+        parentId: normalizedParentId,
+        createdAt: now,
+        updatedAt: now,
+        customOrder
       });
 
       return {
         id: folderId,
         name: normalizedName,
         parentId: normalizedParentId,
+        createdAt: now,
+        updatedAt: now,
+        customOrder,
         bookmarkCount: 0
       };
     });
@@ -559,8 +1015,10 @@ export async function createFolder(name, parentId = null) {
   }
 }
 
-export async function listFolders() {
+export async function listFolders(options = {}) {
   try {
+    const queryOptions = toQueryOptions(options);
+
     return await db.transaction('r', db.folders, db.bookmarks, async () => {
       const folders = (await db.folders.toArray()).map(normalizeFolderRecord);
 
@@ -578,9 +1036,7 @@ export async function listFolders() {
         })
       );
 
-      withCounts.sort((a, b) => a.name.localeCompare(b.name));
-
-      return withCounts;
+      return sortFolderRecords(withCounts, queryOptions);
     });
   } catch (error) {
     console.error('Error listing folders:', error);
@@ -604,15 +1060,13 @@ export async function getFolderById(folderId) {
   }
 }
 
-export async function listChildFolders(parentId = null) {
+export async function listChildFolders(parentId = null, options = {}) {
   try {
     const normalizedParentId = normalizeParentId(parentId);
+    const queryOptions = toQueryOptions(options);
 
     return await db.transaction('r', db.folders, db.bookmarks, async () => {
-      const folders = await db.folders
-        .where('parentId')
-        .equals(normalizedParentId)
-        .toArray();
+      const folders = await getFoldersByParentId(normalizedParentId);
 
       const withCounts = await Promise.all(
         folders.map(async (folder) => {
@@ -628,8 +1082,7 @@ export async function listChildFolders(parentId = null) {
         })
       );
 
-      withCounts.sort((a, b) => a.name.localeCompare(b.name));
-      return withCounts;
+      return sortFolderRecords(withCounts, queryOptions);
     });
   } catch (error) {
     console.error('Error listing child folders:', error);
@@ -689,12 +1142,9 @@ export async function renameFolder(folderId, newName) {
         throw new Error('Folder not found.');
       }
 
-      const siblingFolders = await db.folders
-        .where('parentId')
-        .equals(current.parentId ?? null)
-        .toArray();
+      const siblingFoldersSafe = await getFoldersByParentId(current.parentId ?? null);
 
-      const hasDuplicateName = siblingFolders.some((folder) => {
+      const hasDuplicateName = siblingFoldersSafe.some((folder) => {
         return folder.id !== parsedFolderId && folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
       });
 
@@ -702,7 +1152,10 @@ export async function renameFolder(folderId, newName) {
         throw new Error('A folder with this name already exists in this location.');
       }
 
-      await db.folders.update(parsedFolderId, { name: normalizedName });
+      await db.folders.update(parsedFolderId, {
+        name: normalizedName,
+        updatedAt: getNowTimestamp()
+      });
 
       return parsedFolderId;
     });
@@ -722,6 +1175,7 @@ export async function deleteFolder(folderId, moveBookmarksTo = null) {
     }
 
     return await db.transaction('rw', db.folders, db.bookmarks, async () => {
+      const now = getNowTimestamp();
       const folder = await db.folders.get(parsedFolderId);
 
       if (!folder) {
@@ -758,11 +1212,17 @@ export async function deleteFolder(folderId, moveBookmarksTo = null) {
 
         await db.bookmarks
           .filter((bookmark) => folderIdsToDelete.includes(bookmark.folderId))
-          .modify({ folderId: parsedMoveFolderId });
+          .modify((bookmark) => {
+            bookmark.folderId = parsedMoveFolderId;
+            bookmark.updatedAt = now;
+          });
       } else {
         await db.bookmarks
           .filter((bookmark) => folderIdsToDelete.includes(bookmark.folderId))
-          .modify({ folderId: null });
+          .modify((bookmark) => {
+            bookmark.folderId = null;
+            bookmark.updatedAt = now;
+          });
       }
 
       await db.folders.bulkDelete(folderIdsToDelete);
@@ -778,9 +1238,9 @@ export async function deleteFolder(folderId, moveBookmarksTo = null) {
 export async function exportDatabase() {
   try {
     return await db.transaction('r', db.folders, db.icons, db.bookmarks, async () => {
-      const folders = await db.folders.toArray();
+      const folders = (await db.folders.toArray()).map(normalizeFolderRecord);
       const iconRows = await db.icons.toArray();
-      const bookmarks = await db.bookmarks.toArray();
+      const bookmarks = (await db.bookmarks.toArray()).map(normalizeBookmarkRecord);
 
       const icons = (await Promise.all(
         iconRows.map(async (icon) => {
@@ -802,7 +1262,7 @@ export async function exportDatabase() {
       )).filter(Boolean);
 
       return {
-        version: 4,
+        version: 5,
         exportedAt: new Date().toISOString(),
         data: {
           folders,
@@ -819,6 +1279,7 @@ export async function exportDatabase() {
 
 export async function importDatabaseReplace(payload) {
   try {
+    const now = getNowTimestamp();
     const parsedPayload = typeof payload === 'string'
       ? JSON.parse(payload)
       : payload;
@@ -831,7 +1292,10 @@ export async function importDatabaseReplace(payload) {
         name: normalizeFolderName(folder.name),
         parentId: folder.parentId === null || folder.parentId === undefined
           ? null
-          : Number(folder.parentId)
+          : Number(folder.parentId),
+        createdAt: normalizeTimestamp(folder.createdAt, now),
+        updatedAt: normalizeTimestamp(folder.updatedAt, now),
+        customOrder: normalizeCustomOrder(folder.customOrder, Number(folder.id) || 0)
       }))
       .filter((folder) => Number.isInteger(folder.id) && folder.name);
 
@@ -841,6 +1305,10 @@ export async function importDatabaseReplace(payload) {
       if (!Number.isInteger(folder.parentId) || !folderIds.has(folder.parentId)) {
         folder.parentId = null;
       }
+
+      folder.createdAt = normalizeTimestamp(folder.createdAt, now);
+      folder.updatedAt = normalizeTimestamp(folder.updatedAt, folder.createdAt);
+      folder.customOrder = normalizeCustomOrder(folder.customOrder, folder.id);
     });
 
     const icons = ensureArray(data?.icons, 'icons')
@@ -869,10 +1337,21 @@ export async function importDatabaseReplace(payload) {
           title: String(bookmark.title ?? ''),
           url: String(bookmark.url ?? ''),
           folderId: Number.isInteger(folderId) && validFolderIds.has(folderId) ? folderId : null,
-          iconId: Number.isInteger(iconId) && validIconIds.has(iconId) ? iconId : null
+          iconId: Number.isInteger(iconId) && validIconIds.has(iconId) ? iconId : null,
+          createdAt: normalizeTimestamp(bookmark.createdAt, now),
+          updatedAt: normalizeTimestamp(bookmark.updatedAt, now),
+          lastClickedAt: normalizeNullableTimestamp(bookmark.lastClickedAt),
+          customOrder: normalizeCustomOrder(bookmark.customOrder, id)
         };
       })
       .filter((bookmark) => Number.isInteger(bookmark.id) && bookmark.url);
+
+    bookmarks.forEach((bookmark) => {
+      bookmark.createdAt = normalizeTimestamp(bookmark.createdAt, now);
+      bookmark.updatedAt = normalizeTimestamp(bookmark.updatedAt, bookmark.createdAt);
+      bookmark.lastClickedAt = normalizeNullableTimestamp(bookmark.lastClickedAt);
+      bookmark.customOrder = normalizeCustomOrder(bookmark.customOrder, bookmark.id);
+    });
 
     await db.transaction('rw', db.folders, db.icons, db.bookmarks, async () => {
       await db.bookmarks.clear();

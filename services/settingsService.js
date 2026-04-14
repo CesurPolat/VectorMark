@@ -1,7 +1,12 @@
 const DEFAULT_SETTINGS = {
   openInNewTab: false,
   pageSize: 40,
-  iconStorageMode: 'base64'
+  iconStorageMode: 'base64',
+  bookmarkSortBy: 'updatedAt',
+  bookmarkSortDir: 'desc',
+  folderSortBy: 'name',
+  folderSortDir: 'asc',
+  manualOrderEnabled: false
 };
 
 const SETTINGS_STORAGE_KEY = 'vectormarkSettings';
@@ -18,11 +23,20 @@ function clampPageSize(value) {
 
 function normalizeSettings(raw = {}) {
   const iconStorageMode = raw.iconStorageMode === 'url' ? 'url' : 'base64';
+  const bookmarkSortBy = String(raw.bookmarkSortBy ?? '').trim();
+  const bookmarkSortDir = raw.bookmarkSortDir === 'asc' ? 'asc' : 'desc';
+  const folderSortBy = String(raw.folderSortBy ?? '').trim();
+  const folderSortDir = raw.folderSortDir === 'desc' ? 'desc' : 'asc';
 
   return {
     openInNewTab: raw.openInNewTab === true,
     pageSize: clampPageSize(raw.pageSize),
-    iconStorageMode
+    iconStorageMode,
+    bookmarkSortBy: bookmarkSortBy || DEFAULT_SETTINGS.bookmarkSortBy,
+    bookmarkSortDir,
+    folderSortBy: folderSortBy || DEFAULT_SETTINGS.folderSortBy,
+    folderSortDir,
+    manualOrderEnabled: raw.manualOrderEnabled === true
   };
 }
 
@@ -38,7 +52,17 @@ export async function getSettings() {
   }
 
   return await new Promise((resolve) => {
-    storage.get([SETTINGS_STORAGE_KEY, 'openInNewTab', 'pageSize', 'iconStorageMode'], (result) => {
+    storage.get([
+      SETTINGS_STORAGE_KEY,
+      'openInNewTab',
+      'pageSize',
+      'iconStorageMode',
+      'bookmarkSortBy',
+      'bookmarkSortDir',
+      'folderSortBy',
+      'folderSortDir',
+      'manualOrderEnabled'
+    ], (result) => {
       const runtimeError = chrome.runtime?.lastError;
 
       if (runtimeError) {
@@ -75,7 +99,12 @@ export async function updateSettings(partialSettings) {
       // Keep legacy keys for backward compatibility.
       openInNewTab: merged.openInNewTab,
       pageSize: merged.pageSize,
-      iconStorageMode: merged.iconStorageMode
+      iconStorageMode: merged.iconStorageMode,
+      bookmarkSortBy: merged.bookmarkSortBy,
+      bookmarkSortDir: merged.bookmarkSortDir,
+      folderSortBy: merged.folderSortBy,
+      folderSortDir: merged.folderSortDir,
+      manualOrderEnabled: merged.manualOrderEnabled
     }, () => {
       const runtimeError = chrome.runtime?.lastError;
 
