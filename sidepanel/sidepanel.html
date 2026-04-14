@@ -287,8 +287,13 @@
 
     .vm-settings-actions {
       display: flex;
+      flex-direction: column;
       gap: 8px;
-      flex-wrap: wrap;
+    }
+
+    .vm-settings-actions .button {
+      width: 100%;
+      justify-content: flex-start;
     }
 
     .vm-settings-field {
