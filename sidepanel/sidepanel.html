@@ -837,6 +837,16 @@
             </div>
             <p class="vm-settings-note">A larger value loads more entries per request.</p>
           </div>
+          <div class="vm-settings-field">
+            <label class="label" for="icon-storage-mode-select">Icon storage mode</label>
+            <div class="select is-fullwidth">
+              <select id="icon-storage-mode-select">
+                <option value="base64" selected>Base64 (offline, larger)</option>
+                <option value="url">URL + hash (lighter)</option>
+              </select>
+            </div>
+            <p class="vm-settings-note">Both modes dedupe by icon hash when available.</p>
+          </div>
         </div>
 
         <div class="vm-settings-block">
@@ -850,7 +860,12 @@
               <span class="icon"><i class="fas fa-file-import"></i></span>
               <span>Import DB (Replace)</span>
             </button>
+            <button id="normalize-icons-btn" class="button is-info is-light" type="button">
+              <span class="icon"><i class="fas fa-compress-arrows-alt"></i></span>
+              <span>Normalize Icons</span>
+            </button>
           </div>
+          <p class="vm-settings-note">Normalizes icons using selected storage mode, merges duplicates by hash/data, and cleans unused icon rows.</p>
           <input id="db-import-input" class="is-hidden" type="file" accept="application/json" />
         </div>
 

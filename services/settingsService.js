@@ -1,6 +1,7 @@
 const DEFAULT_SETTINGS = {
   openInNewTab: false,
-  pageSize: 40
+  pageSize: 40,
+  iconStorageMode: 'base64'
 };
 
 const SETTINGS_STORAGE_KEY = 'vectormarkSettings';
@@ -16,9 +17,12 @@ function clampPageSize(value) {
 }
 
 function normalizeSettings(raw = {}) {
+  const iconStorageMode = raw.iconStorageMode === 'url' ? 'url' : 'base64';
+
   return {
     openInNewTab: raw.openInNewTab === true,
-    pageSize: clampPageSize(raw.pageSize)
+    pageSize: clampPageSize(raw.pageSize),
+    iconStorageMode
   };
 }
 
@@ -34,7 +38,7 @@ export async function getSettings() {
   }
 
   return await new Promise((resolve) => {
-    storage.get([SETTINGS_STORAGE_KEY, 'openInNewTab', 'pageSize'], (result) => {
+    storage.get([SETTINGS_STORAGE_KEY, 'openInNewTab', 'pageSize', 'iconStorageMode'], (result) => {
       const runtimeError = chrome.runtime?.lastError;
 
       if (runtimeError) {
@@ -70,7 +74,8 @@ export async function updateSettings(partialSettings) {
       [SETTINGS_STORAGE_KEY]: merged,
       // Keep legacy keys for backward compatibility.
       openInNewTab: merged.openInNewTab,
-      pageSize: merged.pageSize
+      pageSize: merged.pageSize,
+      iconStorageMode: merged.iconStorageMode
     }, () => {
       const runtimeError = chrome.runtime?.lastError;
 

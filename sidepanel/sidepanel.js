@@ -8,7 +8,9 @@
   listFolders,
   exportDatabase,
   importDatabaseReplace,
-  saveOrUpdateBookmarkByUrl
+  saveOrUpdateBookmarkByUrl,
+  resolveBookmarkIconPayload,
+  normalizeLegacyIconsToBase64
 } from '../services/dbService.js';
 import {
   getSettings,
@@ -28,6 +30,7 @@ const state = {
   settingsBusy: false,
   pageSize: 40,
   openInNewTab: true,
+  iconStorageMode: 'base64',
   totalBookmarks: 0,
   hasMore: true,
   loadingMore: false,
@@ -69,9 +72,11 @@ let $bookmarkImportJsonBtn;
 let $bookmarkImportHtmlBtn;
 let $bookmarkJsonInput;
 let $bookmarkHtmlInput;
+let $normalizeIconsBtn;
 let $loadingMoreState;
 let $openNewTabToggle;
 let $pageSizeSelect;
+let $iconStorageModeSelect;
 
 $(document).ready(async () => {
   cacheDom();
@@ -90,11 +95,13 @@ async function loadSettings() {
     const settings = await getSettings();
     state.openInNewTab = settings.openInNewTab;
     state.pageSize = settings.pageSize;
+    state.iconStorageMode = settings.iconStorageMode;
   } catch (error) {
     console.error('Error loading settings:', error);
     const defaults = getDefaultSettings();
     state.openInNewTab = defaults.openInNewTab;
     state.pageSize = defaults.pageSize;
+    state.iconStorageMode = defaults.iconStorageMode;
   }
 
   syncSettingsControls();
@@ -107,6 +114,10 @@ function syncSettingsControls() {
 
   if ($pageSizeSelect) {
     $pageSizeSelect.val(String(state.pageSize));
+  }
+
+  if ($iconStorageModeSelect) {
+    $iconStorageModeSelect.val(state.iconStorageMode === 'url' ? 'url' : 'base64');
   }
 }
 
@@ -146,9 +157,11 @@ function cacheDom() {
   $bookmarkImportHtmlBtn = $('#bookmark-import-html-btn');
   $bookmarkJsonInput = $('#bookmark-json-input');
   $bookmarkHtmlInput = $('#bookmark-html-input');
+  $normalizeIconsBtn = $('#normalize-icons-btn');
   $loadingMoreState = $('#loading-more-state');
   $openNewTabToggle = $('#open-new-tab-toggle');
   $pageSizeSelect = $('#page-size-select');
+  $iconStorageModeSelect = $('#icon-storage-mode-select');
 }
 
 function bindEvents() {
@@ -221,11 +234,13 @@ function bindEvents() {
     try {
       const saved = await updateSettings({
         openInNewTab: state.openInNewTab,
-        pageSize: state.pageSize
+        pageSize: state.pageSize,
+        iconStorageMode: state.iconStorageMode
       });
 
       state.openInNewTab = saved.openInNewTab;
       state.pageSize = saved.pageSize;
+      state.iconStorageMode = saved.iconStorageMode;
       syncSettingsControls();
 
       render();
@@ -251,11 +266,13 @@ function bindEvents() {
     try {
       const saved = await updateSettings({
         openInNewTab: state.openInNewTab,
-        pageSize: state.pageSize
+        pageSize: state.pageSize,
+        iconStorageMode: state.iconStorageMode
       });
 
       state.openInNewTab = saved.openInNewTab;
       state.pageSize = saved.pageSize;
+      state.iconStorageMode = saved.iconStorageMode;
       syncSettingsControls();
 
       await loadBookmarks();
@@ -265,6 +282,31 @@ function bindEvents() {
       state.pageSize = previousPageSize;
       $pageSizeSelect.val(String(previousPageSize));
       setSettingsStatus('Could not save page size.', true);
+    }
+  });
+
+  $iconStorageModeSelect.on('change', async () => {
+    const nextMode = String($iconStorageModeSelect.val() ?? '').trim() === 'url' ? 'url' : 'base64';
+    const previousMode = state.iconStorageMode;
+    state.iconStorageMode = nextMode;
+
+    try {
+      const saved = await updateSettings({
+        openInNewTab: state.openInNewTab,
+        pageSize: state.pageSize,
+        iconStorageMode: state.iconStorageMode
+      });
+
+      state.openInNewTab = saved.openInNewTab;
+      state.pageSize = saved.pageSize;
+      state.iconStorageMode = saved.iconStorageMode;
+      syncSettingsControls();
+      setSettingsStatus('Icon storage mode saved.', false);
+    } catch (error) {
+      console.error('Error saving icon storage mode:', error);
+      state.iconStorageMode = previousMode;
+      syncSettingsControls();
+      setSettingsStatus('Could not save icon storage mode.', true);
     }
   });
 
@@ -331,6 +373,7 @@ function bindEvents() {
   $bookmarkJsonInput.on('change', handleBookmarkJsonImportChange);
   $bookmarkImportHtmlBtn.on('click', () => $bookmarkHtmlInput.trigger('click'));
   $bookmarkHtmlInput.on('change', handleBookmarkHtmlImportChange);
+  $normalizeIconsBtn.on('click', handleNormalizeIcons);
 
   $(document).on('keydown', (event) => {
     if (event.key === 'Escape') {
@@ -769,6 +812,7 @@ async function openSettingsDrawer() {
     const latest = await getSettings();
     state.openInNewTab = latest.openInNewTab;
     state.pageSize = latest.pageSize;
+    state.iconStorageMode = latest.iconStorageMode;
   } catch (error) {
     console.error('Error refreshing settings before opening drawer:', error);
   }
@@ -894,8 +938,10 @@ function setSettingsBusy(isBusy) {
   $bookmarkImportChromeBtn.prop('disabled', isBusy);
   $bookmarkImportJsonBtn.prop('disabled', isBusy);
   $bookmarkImportHtmlBtn.prop('disabled', isBusy);
+  $normalizeIconsBtn.prop('disabled', isBusy);
   $openNewTabToggle.prop('disabled', isBusy);
   $pageSizeSelect.prop('disabled', isBusy);
+  $iconStorageModeSelect.prop('disabled', isBusy);
 }
 
 async function handleDbExport() {
@@ -1009,6 +1055,64 @@ async function handleBookmarkHtmlImportChange(event) {
   } catch (error) {
     console.error('HTML import failed:', error);
     setSettingsStatus(error?.message || 'HTML import failed.', true);
+  } finally {
+    setSettingsBusy(false);
+  }
+}
+
+async function handleNormalizeIcons() {
+  const modeLabel = state.iconStorageMode === 'url' ? 'URL + hash' : 'Base64';
+  const confirmed = window.confirm(`Normalize icons will use ${modeLabel} mode, merge duplicates, and remove unused icon rows. Continue?`);
+
+  if (!confirmed) {
+    return;
+  }
+
+  setSettingsBusy(true);
+  setSettingsStatus(`Normalizing icons (${modeLabel})...`, false);
+
+  try {
+    let lastProgressRenderAt = 0;
+
+    const summary = await normalizeLegacyIconsToBase64({
+      storageMode: state.iconStorageMode,
+      onProgress: (progress) => {
+        const now = Date.now();
+
+        if (progress.stage !== 'done' && now - lastProgressRenderAt < 120) {
+          return;
+        }
+
+        lastProgressRenderAt = now;
+
+        if (progress.stage === 'convert') {
+          setSettingsStatus(
+            `Normalizing icons... ${progress.processed}/${progress.total} processed${progress.failed ? `, failed: ${progress.failed}` : ''}`,
+            false
+          );
+          return;
+        }
+
+        if (progress.stage === 'merge') {
+          setSettingsStatus('Normalizing icons... merging duplicates and updating references...', false);
+          return;
+        }
+
+        if (progress.stage === 'start') {
+          setSettingsStatus('Normalizing icons... preparing data...', false);
+        }
+      }
+    });
+
+    await loadBookmarks();
+
+    setSettingsStatus(
+      `Icon normalization done. Total: ${summary.total}, Converted: ${summary.converted}, Reattached: ${summary.reattached}, Detached: ${summary.detached}, Deleted: ${summary.deleted}, Failed: ${summary.failed}.`,
+      false
+    );
+  } catch (error) {
+    console.error('Icon normalization failed:', error);
+    setSettingsStatus(error?.message || 'Icon normalization failed.', true);
   } finally {
     setSettingsBusy(false);
   }
@@ -1163,6 +1267,7 @@ function folderMapKey(parentId, name) {
 
 async function importNormalizedBookmarks(items) {
   const folderMap = new Map();
+  const iconDataByDomain = new Map();
 
   const existingFolders = await listFolders();
   existingFolders.forEach((folder) => {
@@ -1187,13 +1292,18 @@ async function importNormalizedBookmarks(items) {
     const title = String(item.title ?? '').trim() || url;
     const folderPath = String(item.folderPath ?? '').trim();
     const folderId = await resolveFolderId(folderPath, folderMap);
+    const iconPayload = await resolveBookmarkIconPayload(url, '', {
+      domainCache: iconDataByDomain,
+      storageMode: state.iconStorageMode,
+      skipPageHtmlLookup: true
+    });
 
     try {
       const result = await saveOrUpdateBookmarkByUrl(
         title,
         url,
         folderId,
-        `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(url)}&sz=64`
+        iconPayload
       );
 
       if (result.action === 'created') {

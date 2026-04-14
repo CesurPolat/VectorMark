@@ -37,6 +37,20 @@ db.version(3)
     });
   });
 
+db.version(4)
+  .stores({
+    folders: '++id, name, parentId, &[parentId+name]',
+    icons: '++id, data, hash',
+    bookmarks: '++id, title, url, folderId, iconId'
+  })
+  .upgrade(async (tx) => {
+    await tx.table('icons').toCollection().modify((icon) => {
+      icon.data = String(icon.data ?? icon.base64 ?? '');
+      icon.hash = String(icon.hash ?? '').trim();
+      delete icon.base64;
+    });
+  });
+
 function normalizeIconData(icon) {
   if (!icon) {
     return null;
@@ -44,30 +58,483 @@ function normalizeIconData(icon) {
 
   return {
     ...icon,
-    data: String(icon.data ?? icon.base64 ?? '')
+    data: String(icon.data ?? icon.base64 ?? ''),
+    hash: String(icon.hash ?? '')
   };
 }
 
-// Add a bookmark with a new icon
-export async function addBookmarkWithIcon(title, url, folderId, data) {
+function normalizeIconPayload(data) {
+  const value = String(data ?? '').trim();
+  return value || null;
+}
+
+function normalizeIconHash(hash) {
+  const value = String(hash ?? '').trim();
+  return value || null;
+}
+
+function normalizeIconInput(icon) {
+  if (icon === null || icon === undefined) {
+    return null;
+  }
+
+  if (typeof icon === 'string') {
+    const data = normalizeIconPayload(icon);
+    return data ? { data, hash: null } : null;
+  }
+
+  const data = normalizeIconPayload(icon.data);
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    data,
+    hash: normalizeIconHash(icon.hash)
+  };
+}
+
+const ICON_FETCH_TIMEOUT_MS = 7000;
+const GOOGLE_FAVICON_MIN_INTERVAL_MS = 180;
+let lastGoogleFaviconFetchAt = 0;
+
+function isDataUri(value) {
+  return /^data:/i.test(String(value ?? '').trim());
+}
+
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value ?? '').trim());
+}
+
+function extractHostnameFromUrl(value) {
   try {
-    return await db.transaction('rw', db.icons, db.bookmarks, async () => {
-      const iconId = await db.icons.add({ data });
-
-      const bookmarkId = await db.bookmarks.add({
-        title,
-        url,
-        folderId,
-        iconId
-      });
-
-      return bookmarkId;
-    });
-  } catch (error) {
-    console.error('Error adding bookmark with icon:', error);
-    throw error;
+    const parsed = new URL(String(value ?? '').trim());
+    return parsed.hostname ? parsed.hostname.toLowerCase() : null;
+  } catch {
+    return null;
   }
 }
+
+function extractDomainFromGoogleFaviconUrl(value) {
+  try {
+    const parsed = new URL(String(value ?? '').trim());
+
+    if (parsed.hostname !== 'www.google.com' || parsed.pathname !== '/s2/favicons') {
+      return null;
+    }
+
+    const rawDomain = String(parsed.searchParams.get('domain_url') ?? '').trim();
+
+    if (!rawDomain) {
+      return null;
+    }
+
+    if (/^https?:\/\//i.test(rawDomain)) {
+      return extractHostnameFromUrl(rawDomain);
+    }
+
+    return rawDomain.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+      function getIconDomainKey(pageUrl, iconUrl = '') {
+        const pageHost = extractHostnameFromUrl(pageUrl);
+
+        if (pageHost) {
+          return pageHost;
+        }
+
+        const googleDomain = extractDomainFromGoogleFaviconUrl(iconUrl);
+
+        if (googleDomain) {
+          return googleDomain;
+        }
+
+        return extractHostnameFromUrl(iconUrl);
+      }
+
+      function isGoogleFaviconUrl(url) {
+        try {
+          const parsed = new URL(String(url ?? '').trim());
+          return parsed.hostname === 'www.google.com' && parsed.pathname === '/s2/favicons';
+        } catch {
+          return false;
+        }
+      }
+
+      async function sleep(ms) {
+        if (!Number.isFinite(ms) || ms <= 0) {
+          return;
+        }
+
+        await new Promise((resolve) => {
+          globalThis.setTimeout(resolve, ms);
+        });
+      }
+
+      async function throttleGoogleFaviconFetch() {
+        const now = Date.now();
+        const elapsed = now - lastGoogleFaviconFetchAt;
+        const waitMs = GOOGLE_FAVICON_MIN_INTERVAL_MS - elapsed;
+
+        if (waitMs > 0) {
+          await sleep(waitMs);
+        }
+
+        lastGoogleFaviconFetchAt = Date.now();
+      }
+
+      function buildGoogleFaviconUrl(pageUrl) {
+        try {
+          const parsed = new URL(String(pageUrl ?? '').trim());
+
+          if (!parsed.hostname) {
+            return null;
+          }
+
+          return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(parsed.hostname)}&sz=64`;
+        } catch {
+          return null;
+        }
+      }
+
+      async function blobToDataUrl(blob) {
+        return await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+
+          reader.onload = () => {
+            resolve(typeof reader.result === 'string' ? reader.result : '');
+          };
+
+          reader.onerror = () => {
+            reject(new Error('Could not convert icon blob to base64.'));
+          };
+
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      function base64ToBytes(base64) {
+        const sanitized = String(base64 ?? '').replace(/\s+/g, '');
+        const binary = atob(sanitized);
+        const bytes = new Uint8Array(binary.length);
+
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+
+        return bytes;
+      }
+
+      async function sha256Hex(bufferLike) {
+        const hashBuffer = await crypto.subtle.digest('SHA-256', bufferLike);
+        const bytes = new Uint8Array(hashBuffer);
+
+        return Array.from(bytes)
+          .map((byte) => byte.toString(16).padStart(2, '0'))
+          .join('');
+      }
+
+      async function hashText(value) {
+        const encoded = new TextEncoder().encode(String(value ?? ''));
+        return await sha256Hex(encoded);
+      }
+
+      async function ensureIconHash(data, currentHash = '') {
+        const existingHash = normalizeIconHash(currentHash);
+
+        if (existingHash) {
+          return existingHash;
+        }
+
+        const normalizedData = normalizeIconPayload(data);
+
+        if (!normalizedData) {
+          return '';
+        }
+
+        if (isDataUri(normalizedData)) {
+          return (await hashFromDataUri(normalizedData)) || '';
+        }
+
+        if (isHttpUrl(normalizedData)) {
+          // Fallback hash for unreachable URL icons: deterministic and non-empty.
+          return await hashText(`url:${normalizedData.toLowerCase()}`);
+        }
+
+        return await hashText(normalizedData);
+      }
+
+      async function hashFromDataUri(dataUri) {
+        try {
+          const match = String(dataUri ?? '').match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
+
+          if (!match) {
+            return null;
+          }
+
+          const isBase64 = !!match[2];
+          const payload = match[3] ?? '';
+
+          if (isBase64) {
+            const bytes = base64ToBytes(payload);
+            return await sha256Hex(bytes);
+          }
+
+          const decoded = decodeURIComponent(payload);
+          const bytes = new TextEncoder().encode(decoded);
+          return await sha256Hex(bytes);
+        } catch {
+          return null;
+        }
+      }
+
+      function readHtmlAttribute(tag, attributeName) {
+        const pattern = new RegExp(`${attributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i');
+        const match = String(tag ?? '').match(pattern);
+
+        if (!match) {
+          return '';
+        }
+
+        return String(match[1] ?? match[2] ?? match[3] ?? '').trim();
+      }
+
+      function extractFaviconHrefFromHtml(html, pageUrl) {
+        const source = String(html ?? '');
+        const linkTagRegex = /<link\b[^>]*>/gi;
+        let match = linkTagRegex.exec(source);
+
+        while (match) {
+          const tag = match[0];
+          const rel = readHtmlAttribute(tag, 'rel').toLowerCase();
+          const href = readHtmlAttribute(tag, 'href');
+
+          if (rel.includes('icon') && href) {
+            try {
+              return new URL(href, pageUrl).href;
+            } catch {
+              // Continue scanning next link tag.
+            }
+          }
+
+          match = linkTagRegex.exec(source);
+        }
+
+        return null;
+      }
+
+      async function findFaviconUrlFromPageHtml(pageUrl) {
+        if (!isHttpUrl(pageUrl)) {
+          return null;
+        }
+
+        const controller = new AbortController();
+        const timeoutId = globalThis.setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS);
+
+        try {
+          const response = await fetch(pageUrl, {
+            method: 'GET',
+            signal: controller.signal,
+            cache: 'force-cache'
+          });
+
+          if (!response.ok) {
+            return null;
+          }
+
+          const contentType = String(response.headers.get('content-type') ?? '').toLowerCase();
+
+          if (contentType && !contentType.includes('text/html')) {
+            return null;
+          }
+
+          const html = await response.text();
+          return extractFaviconHrefFromHtml(html, pageUrl);
+        } catch {
+          return null;
+        } finally {
+          globalThis.clearTimeout(timeoutId);
+        }
+      }
+
+      async function fetchUrlAsIconPayload(url, options = {}) {
+        if (!isHttpUrl(url)) {
+          return null;
+        }
+
+        if (options?.throttleGoogle === true && isGoogleFaviconUrl(url)) {
+          await throttleGoogleFaviconFetch();
+        }
+
+        const controller = new AbortController();
+        const timeoutId = globalThis.setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS);
+
+        try {
+          const response = await fetch(url, {
+            signal: controller.signal,
+            cache: 'force-cache'
+          });
+
+          if (!response.ok) {
+            return null;
+          }
+
+          const blob = await response.blob();
+          const hash = await sha256Hex(await blob.arrayBuffer());
+
+          if (options?.storageMode === 'url') {
+            return {
+              data: String(url).trim(),
+              hash
+            };
+          }
+
+          const dataUri = await blobToDataUrl(blob);
+
+          if (!isDataUri(dataUri)) {
+            return null;
+          }
+
+          return {
+            data: dataUri,
+            hash
+          };
+        } catch {
+          return null;
+        } finally {
+          globalThis.clearTimeout(timeoutId);
+        }
+      }
+
+      async function getOrCreateIconId(iconInput) {
+        const normalizedIcon = normalizeIconInput(iconInput);
+
+        if (!normalizedIcon) {
+          return null;
+        }
+
+        let existing = null;
+
+        if (normalizedIcon.hash) {
+          existing = await db.icons.where('hash').equals(normalizedIcon.hash).first();
+        }
+
+        if (!existing) {
+          existing = await db.icons.where('data').equals(normalizedIcon.data).first();
+        }
+
+        if (existing?.id) {
+          return existing.id;
+        }
+
+        return await db.icons.add({
+          data: normalizedIcon.data,
+          hash: normalizedIcon.hash || ''
+        });
+      }
+
+      async function deleteIconIfUnused(iconId) {
+        if (!Number.isInteger(iconId)) {
+          return false;
+        }
+
+        const usageCount = await db.bookmarks.where('iconId').equals(iconId).count();
+
+        if (usageCount > 0) {
+          return false;
+        }
+
+        await db.icons.delete(iconId);
+        return true;
+      }
+
+      export async function resolveBookmarkIconPayload(pageUrl, preferredIconUrl = '', options = {}) {
+        const preferred = String(preferredIconUrl ?? '').trim();
+        const domainCache = options?.domainCache instanceof Map ? options.domainCache : null;
+        const domainKey = getIconDomainKey(pageUrl, preferred);
+        const storageMode = options?.storageMode === 'url' ? 'url' : 'base64';
+        const skipPageHtmlLookup = options?.skipPageHtmlLookup === true;
+        const cacheKey = domainKey ? `${storageMode}:${domainKey}` : null;
+
+        if (domainCache && cacheKey && domainCache.has(cacheKey)) {
+          return domainCache.get(cacheKey);
+        }
+
+        let resolved = null;
+
+        if (isDataUri(preferred)) {
+          const hash = await hashFromDataUri(preferred);
+          resolved = {
+            data: preferred,
+            hash
+          };
+        }
+
+        if (!resolved && isHttpUrl(preferred)) {
+          resolved = await fetchUrlAsIconPayload(preferred, { storageMode });
+        }
+
+        if (!resolved && !skipPageHtmlLookup) {
+          const htmlDiscoveredFaviconUrl = await findFaviconUrlFromPageHtml(pageUrl);
+
+          if (htmlDiscoveredFaviconUrl) {
+            resolved = await fetchUrlAsIconPayload(htmlDiscoveredFaviconUrl, { storageMode });
+          }
+        }
+
+        if (!resolved) {
+          const googleFaviconUrl = buildGoogleFaviconUrl(pageUrl);
+
+          if (googleFaviconUrl) {
+            resolved = await fetchUrlAsIconPayload(googleFaviconUrl, {
+              throttleGoogle: true,
+              storageMode
+            });
+          }
+        }
+
+        const output = resolved || null;
+
+        if (output?.data) {
+          output.hash = await ensureIconHash(output.data, output.hash);
+        }
+
+        if (domainCache && cacheKey) {
+          domainCache.set(cacheKey, output);
+        }
+
+        return output;
+      }
+
+      export async function resolveBookmarkIconData(pageUrl, preferredIconUrl = '', options = {}) {
+        const payload = await resolveBookmarkIconPayload(pageUrl, preferredIconUrl, options);
+        return payload?.data ?? null;
+      }
+
+      // Add a bookmark with a new icon
+      export async function addBookmarkWithIcon(title, url, folderId, data) {
+        try {
+          return await db.transaction('rw', db.icons, db.bookmarks, async () => {
+            const iconId = await getOrCreateIconId(data);
+
+            const bookmarkId = await db.bookmarks.add({
+              title,
+              url,
+              folderId,
+              iconId
+            });
+
+            return bookmarkId;
+          });
+        } catch (error) {
+          console.error('Error adding bookmark with icon:', error);
+          throw error;
+        }
+      }
 
 export async function updateBookmark(bookmarkId, updates) {
   try {
@@ -107,7 +574,7 @@ export async function deleteBookmark(bookmarkId) {
       await db.bookmarks.delete(bookmarkId);
 
       if (bookmark.iconId) {
-        await db.icons.delete(bookmark.iconId);
+        await deleteIconIfUnused(bookmark.iconId);
       }
 
       return true;
@@ -130,7 +597,7 @@ export async function deleteBookmarkByUrl(url) {
       await db.bookmarks.delete(bookmark.id);
 
       if (bookmark.iconId) {
-        await db.icons.delete(bookmark.iconId);
+        await deleteIconIfUnused(bookmark.iconId);
       }
 
       return true;
@@ -405,13 +872,14 @@ export async function isUrlExist(url) {
 export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.bookmarks, db.icons, async () => {
+      const normalizedIcon = normalizeIconInput(data);
       const bookmark = await db.bookmarks
         .where('url')
         .equals(url)
         .first();
 
       if (!bookmark) {
-        const iconId = await db.icons.add({ data });
+        const iconId = await getOrCreateIconId(normalizedIcon);
         const bookmarkId = await db.bookmarks.add({
           title,
           url,
@@ -426,12 +894,15 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
       }
 
       let iconId = bookmark.iconId;
+      let previousIconIdToCleanup = null;
 
-      if (data) {
-        if (iconId) {
-          await db.icons.update(iconId, { data });
-        } else {
-          iconId = await db.icons.add({ data });
+      if (normalizedIcon) {
+        const nextIconId = await getOrCreateIconId(normalizedIcon);
+
+        if (nextIconId && iconId !== nextIconId) {
+          const previousIconId = iconId;
+          iconId = nextIconId;
+          previousIconIdToCleanup = previousIconId;
         }
       }
 
@@ -444,6 +915,10 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
       }
 
       await db.bookmarks.update(bookmark.id, updates);
+
+      if (previousIconIdToCleanup) {
+        await deleteIconIfUnused(previousIconIdToCleanup);
+      }
 
       return {
         bookmarkId: bookmark.id,
@@ -762,15 +1237,34 @@ export async function exportDatabase() {
   try {
     return await db.transaction('r', db.folders, db.icons, db.bookmarks, async () => {
       const folders = await db.folders.toArray();
-      const icons = await db.icons.toArray();
+      const iconRows = await db.icons.toArray();
       const bookmarks = await db.bookmarks.toArray();
 
+      const icons = (await Promise.all(
+        iconRows.map(async (icon) => {
+          const normalizedIcon = normalizeIconData(icon);
+
+          if (!normalizedIcon || !Number.isInteger(Number(normalizedIcon.id))) {
+            return null;
+          }
+
+          const data = String(normalizedIcon.data ?? '');
+          const hash = await ensureIconHash(data, normalizedIcon.hash ?? '');
+
+          return {
+            id: Number(normalizedIcon.id),
+            data,
+            hash: String(hash ?? '')
+          };
+        })
+      )).filter(Boolean);
+
       return {
-        version: 3,
+        version: 4,
         exportedAt: new Date().toISOString(),
         data: {
           folders,
-          icons: icons.map(normalizeIconData),
+          icons,
           bookmarks
         }
       };
@@ -810,7 +1304,8 @@ export async function importDatabaseReplace(payload) {
     const icons = ensureArray(data?.icons, 'icons')
       .map((icon) => ({
         id: Number(icon.id),
-        data: String(icon.data ?? icon.base64 ?? '')
+        data: String(icon.data ?? icon.base64 ?? ''),
+        hash: String(icon.hash ?? '')
       }))
       .filter((icon) => Number.isInteger(icon.id));
 
@@ -864,4 +1359,211 @@ export async function importDatabaseReplace(payload) {
     console.error('Error importing database:', error);
     throw error;
   }
+}
+
+export async function normalizeLegacyIconsToBase64(options = {}) {
+  const onProgress = typeof options?.onProgress === 'function' ? options.onProgress : null;
+  const storageMode = options?.storageMode === 'url' ? 'url' : 'base64';
+  const icons = (await db.icons.toArray()).map(normalizeIconData);
+  const bookmarks = await db.bookmarks.toArray();
+  const bookmarksByIconId = new Map();
+  const domainCache = new Map();
+  const totalIcons = icons.length;
+
+  function reportProgress(progress) {
+    if (!onProgress) {
+      return;
+    }
+
+    onProgress({
+      total: totalIcons,
+      ...progress
+    });
+  }
+
+  reportProgress({ stage: 'start', processed: 0 });
+
+  bookmarks.forEach((bookmark) => {
+    if (!Number.isInteger(bookmark.iconId)) {
+      return;
+    }
+
+    if (!bookmarksByIconId.has(bookmark.iconId)) {
+      bookmarksByIconId.set(bookmark.iconId, []);
+    }
+
+    bookmarksByIconId.get(bookmark.iconId).push(bookmark);
+  });
+
+  const nextDataByIconId = new Map();
+  const nextHashByIconId = new Map();
+  let processed = 0;
+  let failed = 0;
+
+  for (const icon of icons) {
+    const normalized = normalizeIconPayload(icon.data);
+
+    if (!normalized) {
+      nextDataByIconId.set(icon.id, null);
+      nextHashByIconId.set(icon.id, normalizeIconHash(icon.hash) || '');
+      processed += 1;
+      reportProgress({ stage: 'convert', processed });
+      continue;
+    }
+
+    if (isDataUri(normalized)) {
+      const hash = await ensureIconHash(normalized, icon.hash);
+      nextDataByIconId.set(icon.id, normalized);
+      nextHashByIconId.set(icon.id, hash || '');
+      processed += 1;
+      reportProgress({ stage: 'convert', processed });
+      continue;
+    }
+
+    const relatedBookmarks = bookmarksByIconId.get(icon.id) || [];
+    const primaryBookmarkUrl = relatedBookmarks[0]?.url || '';
+    const converted = await resolveBookmarkIconPayload(primaryBookmarkUrl, normalized, {
+      domainCache,
+      storageMode,
+      skipPageHtmlLookup: true
+    });
+
+    if (!converted?.data) {
+      if (storageMode === 'url' && isHttpUrl(normalized)) {
+        let hash = normalizeIconHash(icon.hash);
+
+        if (!hash) {
+          const hashed = await fetchUrlAsIconPayload(normalized, {
+            storageMode: 'url',
+            throttleGoogle: isGoogleFaviconUrl(normalized)
+          });
+
+          hash = normalizeIconHash(hashed?.hash);
+        }
+
+        hash = await ensureIconHash(normalized, hash);
+
+        nextDataByIconId.set(icon.id, normalized);
+        nextHashByIconId.set(icon.id, hash || '');
+
+        if (!hash) {
+          failed += 1;
+        }
+
+        processed += 1;
+        reportProgress({ stage: 'convert', processed, failed });
+        continue;
+      }
+
+      failed += 1;
+    }
+
+    nextDataByIconId.set(icon.id, converted?.data || null);
+    nextHashByIconId.set(
+      icon.id,
+      await ensureIconHash(converted?.data || '', converted?.hash || '')
+    );
+    processed += 1;
+    reportProgress({ stage: 'convert', processed, failed });
+  }
+
+  reportProgress({ stage: 'merge', processed: totalIcons, failed });
+
+  const canonicalByData = new Map();
+  const canonicalByHash = new Map();
+  const targetIconIdByIconId = new Map();
+
+  icons.forEach((icon) => {
+    const nextData = nextDataByIconId.get(icon.id) || null;
+    const nextHash = normalizeIconHash(nextHashByIconId.get(icon.id));
+
+    if (!nextData) {
+      targetIconIdByIconId.set(icon.id, null);
+      return;
+    }
+
+    if (nextHash && canonicalByHash.has(nextHash)) {
+      targetIconIdByIconId.set(icon.id, canonicalByHash.get(nextHash));
+      return;
+    }
+
+    if (canonicalByData.has(nextData)) {
+      targetIconIdByIconId.set(icon.id, canonicalByData.get(nextData));
+      return;
+    }
+
+    if (nextHash) {
+      canonicalByHash.set(nextHash, icon.id);
+    }
+
+    canonicalByData.set(nextData, icon.id);
+    targetIconIdByIconId.set(icon.id, icon.id);
+  });
+
+  const summary = {
+    total: totalIcons,
+    converted: 0,
+    detached: 0,
+    reattached: 0,
+    deleted: 0,
+    failed
+  };
+
+  await db.transaction('rw', db.icons, db.bookmarks, async () => {
+    for (const icon of icons) {
+      const nextData = nextDataByIconId.get(icon.id) || null;
+      const nextHash = normalizeIconHash(nextHashByIconId.get(icon.id)) || '';
+
+      if (nextData && icon.data !== nextData) {
+        await db.icons.update(icon.id, {
+          data: nextData,
+          hash: nextHash
+        });
+        summary.converted += 1;
+        continue;
+      }
+
+      if (String(icon.hash ?? '') !== nextHash) {
+        await db.icons.update(icon.id, { hash: nextHash });
+      }
+    }
+
+    for (const icon of icons) {
+      const targetIconId = targetIconIdByIconId.get(icon.id);
+
+      if (targetIconId === icon.id) {
+        continue;
+      }
+
+      if (targetIconId === null) {
+        const detachedCount = await db.bookmarks.where('iconId').equals(icon.id).modify({ iconId: null });
+        summary.detached += detachedCount;
+        continue;
+      }
+
+      const reattachedCount = await db.bookmarks.where('iconId').equals(icon.id).modify({ iconId: targetIconId });
+      summary.reattached += reattachedCount;
+    }
+
+    const referencedIconIds = new Set(
+      (await db.bookmarks.toArray())
+        .map((bookmark) => bookmark.iconId)
+        .filter((iconId) => Number.isInteger(iconId))
+    );
+
+    const existingIcons = await db.icons.toArray();
+
+    for (const icon of existingIcons) {
+      if (referencedIconIds.has(icon.id)) {
+        continue;
+      }
+
+      await db.icons.delete(icon.id);
+      summary.deleted += 1;
+    }
+  });
+
+  reportProgress({ stage: 'done', processed: totalIcons, summary });
+
+  return summary;
 }

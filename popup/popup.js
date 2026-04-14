@@ -1,4 +1,9 @@
-import { deleteBookmarkByUrl, saveOrUpdateBookmarkByUrl } from '../services/dbService.js';
+import {
+  deleteBookmarkByUrl,
+  saveOrUpdateBookmarkByUrl,
+  resolveBookmarkIconPayload
+} from '../services/dbService.js';
+import { getSettings } from '../services/settingsService.js';
 
 
 $(document).ready(async function () {
@@ -88,11 +93,17 @@ function isSupportedUrl(url) {
 }
 
 async function saveBookmark(url, data) {
+  const settings = await getSettings();
+  const iconPayload = await resolveBookmarkIconPayload(url, data, {
+    storageMode: settings.iconStorageMode,
+    skipPageHtmlLookup: true
+  });
+
   await saveOrUpdateBookmarkByUrl(
     $("#title-input").val(),
     url,
     null,
-    data
+    iconPayload
   );
 }
 
