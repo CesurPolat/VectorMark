@@ -3,14 +3,14 @@ import '../vendor/dexie.js';
 const db = new Dexie('myDatabase');
 db.version(1).stores({
   folders: '++id, &name',
-  icons: '++id, base64',
+  icons: '++id, data',
   bookmarks: '++id, title, url, folderId, iconId'
 });
 
 db.version(2)
   .stores({
     folders: '++id, name, parentId, &[parentId+name]',
-    icons: '++id, base64',
+    icons: '++id, data',
     bookmarks: '++id, title, url, folderId, iconId'
   })
   .upgrade(async (tx) => {
@@ -21,11 +21,38 @@ db.version(2)
     });
   });
 
+db.version(3)
+  .stores({
+    folders: '++id, name, parentId, &[parentId+name]',
+    icons: '++id, data',
+    bookmarks: '++id, title, url, folderId, iconId'
+  })
+  .upgrade(async (tx) => {
+    await tx.table('icons').toCollection().modify((icon) => {
+      if (!Object.prototype.hasOwnProperty.call(icon, 'data')) {
+        icon.data = String(icon.base64 ?? '');
+      }
+
+      delete icon.base64;
+    });
+  });
+
+function normalizeIconData(icon) {
+  if (!icon) {
+    return null;
+  }
+
+  return {
+    ...icon,
+    data: String(icon.data ?? icon.base64 ?? '')
+  };
+}
+
 // Add a bookmark with a new icon
-export async function addBookmarkWithIcon(title, url, folderId, base64) {
+export async function addBookmarkWithIcon(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.icons, db.bookmarks, async () => {
-      const iconId = await db.icons.add({ base64 });
+      const iconId = await db.icons.add({ data });
 
       const bookmarkId = await db.bookmarks.add({
         title,
@@ -375,7 +402,7 @@ export async function isUrlExist(url) {
   }
 }
 
-export async function saveOrUpdateBookmarkByUrl(title, url, folderId, base64) {
+export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.bookmarks, db.icons, async () => {
       const bookmark = await db.bookmarks
@@ -384,7 +411,7 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, base64) {
         .first();
 
       if (!bookmark) {
-        const iconId = await db.icons.add({ base64 });
+        const iconId = await db.icons.add({ data });
         const bookmarkId = await db.bookmarks.add({
           title,
           url,
@@ -400,11 +427,11 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, base64) {
 
       let iconId = bookmark.iconId;
 
-      if (base64) {
+      if (data) {
         if (iconId) {
-          await db.icons.update(iconId, { base64 });
+          await db.icons.update(iconId, { data });
         } else {
-          iconId = await db.icons.add({ base64 });
+          iconId = await db.icons.add({ data });
         }
       }
 
@@ -739,11 +766,11 @@ export async function exportDatabase() {
       const bookmarks = await db.bookmarks.toArray();
 
       return {
-        version: 2,
+        version: 3,
         exportedAt: new Date().toISOString(),
         data: {
           folders,
-          icons,
+          icons: icons.map(normalizeIconData),
           bookmarks
         }
       };
@@ -783,7 +810,7 @@ export async function importDatabaseReplace(payload) {
     const icons = ensureArray(data?.icons, 'icons')
       .map((icon) => ({
         id: Number(icon.id),
-        base64: String(icon.base64 ?? '')
+        data: String(icon.data ?? icon.base64 ?? '')
       }))
       .filter((icon) => Number.isInteger(icon.id));
 

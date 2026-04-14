@@ -664,7 +664,7 @@ function render() {
 
   state.bookmarks.forEach((bookmark) => {
     const iconHtml = bookmark.icon
-      ? `<img src="${escapeAttr(bookmark.icon.base64)}" alt="" />`
+      ? `<img src="${escapeAttr(bookmark.icon.data)}" alt="" />`
       : '<i class="fas fa-bookmark"></i>';
 
     const item = $(`

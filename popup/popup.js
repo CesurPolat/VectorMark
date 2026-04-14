@@ -87,12 +87,12 @@ function isSupportedUrl(url) {
   return typeof url === 'string' && (url.startsWith('http') || url.startsWith('file'));
 }
 
-async function saveBookmark(url, base64) {
+async function saveBookmark(url, data) {
   await saveOrUpdateBookmarkByUrl(
     $("#title-input").val(),
     url,
     null,
-    base64
+    data
   );
 }
 
