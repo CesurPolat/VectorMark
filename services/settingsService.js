@@ -1,6 +1,7 @@
 const DEFAULT_SETTINGS = {
   openInNewTab: false,
   pageSize: 40,
+  viewMode: 'list',
   iconStorageMode: 'base64',
   bookmarkSortBy: 'updatedAt',
   bookmarkSortDir: 'desc',
@@ -23,6 +24,7 @@ function clampPageSize(value) {
 
 function normalizeSettings(raw = {}) {
   const iconStorageMode = raw.iconStorageMode === 'url' ? 'url' : 'base64';
+  const viewMode = raw.viewMode === 'grid' ? 'grid' : 'list';
   const bookmarkSortBy = String(raw.bookmarkSortBy ?? '').trim();
   const bookmarkSortDir = raw.bookmarkSortDir === 'asc' ? 'asc' : 'desc';
   const folderSortBy = String(raw.folderSortBy ?? '').trim();
@@ -31,6 +33,7 @@ function normalizeSettings(raw = {}) {
   return {
     openInNewTab: raw.openInNewTab === true,
     pageSize: clampPageSize(raw.pageSize),
+    viewMode,
     iconStorageMode,
     bookmarkSortBy: bookmarkSortBy || DEFAULT_SETTINGS.bookmarkSortBy,
     bookmarkSortDir,
@@ -56,6 +59,7 @@ export async function getSettings() {
       SETTINGS_STORAGE_KEY,
       'openInNewTab',
       'pageSize',
+      'viewMode',
       'iconStorageMode',
       'bookmarkSortBy',
       'bookmarkSortDir',
@@ -99,6 +103,7 @@ export async function updateSettings(partialSettings) {
       // Keep legacy keys for backward compatibility.
       openInNewTab: merged.openInNewTab,
       pageSize: merged.pageSize,
+      viewMode: merged.viewMode,
       iconStorageMode: merged.iconStorageMode,
       bookmarkSortBy: merged.bookmarkSortBy,
       bookmarkSortDir: merged.bookmarkSortDir,

@@ -42,10 +42,14 @@ const state = {
   error: null,
   query: '',
   selectedBookmark: null,
+  selectedBookmarkIds: new Set(),
+  selectedFolderIds: new Set(),
+  multiSelectEnabled: false,
   activeDrawer: null,
   settingsBusy: false,
   pageSize: 40,
   openInNewTab: true,
+  viewMode: 'list',
   iconStorageMode: 'base64',
   bookmarkSortBy: 'updatedAt',
   bookmarkSortDir: 'desc',
@@ -61,7 +65,8 @@ const state = {
     targetId: null,
     x: 0,
     y: 0
-  }
+  },
+  moveModalOpen: false
 };
 
 let $searchInput;
@@ -105,6 +110,20 @@ let $openNewTabToggle;
 let $pageSizeSelect;
 let $iconStorageModeSelect;
 let $sharedSortSelect;
+let $viewModeChip;
+let $multiSelectChip;
+let $multiSelectPanel;
+let $multiSelectCount;
+let $bulkOpenBtn;
+let $bulkMoveBtn;
+let $bulkDeleteBtn;
+let $bulkClearBtn;
+let $moveModal;
+let $moveModalBackdrop;
+let $moveModalClose;
+let $moveModalCancel;
+let $moveModalSubmit;
+let $moveTargetFolderSelect;
 
 $(document).ready(async () => {
   cacheDom();
@@ -123,6 +142,7 @@ async function loadSettings() {
     const settings = await getSettings();
     state.openInNewTab = settings.openInNewTab;
     state.pageSize = settings.pageSize;
+    state.viewMode = settings.viewMode === 'grid' ? 'grid' : 'list';
     state.iconStorageMode = settings.iconStorageMode;
     state.bookmarkSortBy = settings.bookmarkSortBy;
     state.bookmarkSortDir = settings.bookmarkSortDir;
@@ -133,6 +153,7 @@ async function loadSettings() {
     const defaults = getDefaultSettings();
     state.openInNewTab = defaults.openInNewTab;
     state.pageSize = defaults.pageSize;
+    state.viewMode = defaults.viewMode === 'grid' ? 'grid' : 'list';
     state.iconStorageMode = defaults.iconStorageMode;
     state.bookmarkSortBy = defaults.bookmarkSortBy;
     state.bookmarkSortDir = defaults.bookmarkSortDir;
@@ -148,6 +169,7 @@ async function loadSettings() {
 function applySavedSettings(saved) {
   state.openInNewTab = saved.openInNewTab;
   state.pageSize = saved.pageSize;
+  state.viewMode = saved.viewMode === 'grid' ? 'grid' : 'list';
   state.iconStorageMode = saved.iconStorageMode;
   state.bookmarkSortBy = saved.bookmarkSortBy;
   state.bookmarkSortDir = saved.bookmarkSortDir;
@@ -241,6 +263,7 @@ function getSettingsPayload() {
   return {
     openInNewTab: state.openInNewTab,
     pageSize: state.pageSize,
+    viewMode: state.viewMode,
     iconStorageMode: state.iconStorageMode,
     bookmarkSortBy: state.bookmarkSortBy,
     bookmarkSortDir: state.bookmarkSortDir,
@@ -272,6 +295,20 @@ function syncSettingsControls() {
 
   if ($sharedSortSelect) {
     $sharedSortSelect.val(toSharedSortSelectionValue());
+  }
+
+  if ($viewModeChip) {
+    $viewModeChip.attr('title', state.viewMode === 'grid' ? 'Grid view' : 'List view');
+    $viewModeChip.attr('aria-label', state.viewMode === 'grid' ? 'Grid view active' : 'List view active');
+    $viewModeChip.toggleClass('is-grid', state.viewMode === 'grid');
+    $viewModeChip.toggleClass('is-active', state.viewMode === 'grid');
+  }
+
+  if ($multiSelectChip) {
+    $multiSelectChip.attr('title', state.multiSelectEnabled ? 'Multi select on' : 'Multi select off');
+    $multiSelectChip.attr('aria-label', state.multiSelectEnabled ? 'Multi select on' : 'Multi select off');
+    $multiSelectChip.toggleClass('is-on', state.multiSelectEnabled);
+    $multiSelectChip.toggleClass('is-active', state.multiSelectEnabled);
   }
 }
 
@@ -317,13 +354,287 @@ function cacheDom() {
   $pageSizeSelect = $('#page-size-select');
   $iconStorageModeSelect = $('#icon-storage-mode-select');
   $sharedSortSelect = $('#shared-sort-select');
+  $viewModeChip = $('#view-mode-chip');
+  $multiSelectChip = $('#multi-select-chip');
+  $multiSelectPanel = $('#multi-select-panel');
+  $multiSelectCount = $('#multi-select-count');
+  $bulkOpenBtn = $('#bulk-open-btn');
+  $bulkMoveBtn = $('#bulk-move-btn');
+  $bulkDeleteBtn = $('#bulk-delete-btn');
+  $bulkClearBtn = $('#bulk-clear-btn');
+  $moveModal = $('#move-modal');
+  $moveModalBackdrop = $('#move-modal-backdrop');
+  $moveModalClose = $('#move-modal-close');
+  $moveModalCancel = $('#move-modal-cancel');
+  $moveModalSubmit = $('#move-modal-submit');
+  $moveTargetFolderSelect = $('#move-target-folder-select');
+}
+
+function getSelectedCount() {
+  return state.selectedFolderIds.size + state.selectedBookmarkIds.size;
+}
+
+function clearMultiSelection() {
+  state.selectedFolderIds.clear();
+  state.selectedBookmarkIds.clear();
+}
+
+function selectAllVisibleItems() {
+  const foldersInView = getCurrentChildFolders();
+
+  state.selectedFolderIds = new Set(foldersInView.map((folder) => folder.id));
+  state.selectedBookmarkIds = new Set(state.bookmarks.map((bookmark) => bookmark.id));
+}
+
+function toggleFolderSelection(folderId) {
+  if (!Number.isInteger(folderId)) {
+    return;
+  }
+
+  if (state.selectedFolderIds.has(folderId)) {
+    state.selectedFolderIds.delete(folderId);
+  } else {
+    state.selectedFolderIds.add(folderId);
+  }
+
+  render();
+}
+
+function toggleBookmarkSelection(bookmarkId) {
+  if (!Number.isInteger(bookmarkId)) {
+    return;
+  }
+
+  if (state.selectedBookmarkIds.has(bookmarkId)) {
+    state.selectedBookmarkIds.delete(bookmarkId);
+  } else {
+    state.selectedBookmarkIds.add(bookmarkId);
+  }
+
+  render();
+}
+
+async function toggleViewMode() {
+  const previousMode = state.viewMode;
+  state.viewMode = state.viewMode === 'grid' ? 'list' : 'grid';
+
+  try {
+    await persistSettings();
+    render();
+    setStatus(`View mode: ${state.viewMode === 'grid' ? 'Grid' : 'List'}.`);
+  } catch (error) {
+    console.error('Error saving view mode setting:', error);
+    state.viewMode = previousMode;
+    syncSettingsControls();
+    render();
+    setError('Could not save view mode setting.');
+  }
+}
+
+function toggleMultiSelect() {
+  state.multiSelectEnabled = !state.multiSelectEnabled;
+
+  if (!state.multiSelectEnabled) {
+    closeMoveModal();
+    clearMultiSelection();
+  }
+
+  hideContextMenu();
+  render();
+}
+
+async function handleBulkOpenSelected() {
+  const selectedIds = Array.from(state.selectedBookmarkIds);
+
+  if (selectedIds.length === 0) {
+    setStatus('No bookmarks selected to open.');
+    return;
+  }
+
+  const selectedBookmarks = state.bookmarks.filter((bookmark) => state.selectedBookmarkIds.has(bookmark.id));
+
+  if (selectedBookmarks.length === 0) {
+    setStatus('Select bookmarks from the current list before opening.');
+    return;
+  }
+
+  try {
+    for (const bookmark of selectedBookmarks) {
+      await openBookmarkUrl(bookmark.url, true);
+      await recordBookmarkClick(bookmark.id);
+    }
+
+    setStatus(`Opened ${selectedBookmarks.length} bookmark(s).`);
+
+    if (state.bookmarkSortBy === 'lastClickedAt') {
+      await loadBookmarks();
+    }
+  } catch (error) {
+    console.error('Error opening selected bookmarks:', error);
+    setError('Unable to open selected bookmarks right now.');
+  }
+}
+
+async function handleBulkMoveSelected() {
+  const selectedCount = getSelectedCount();
+
+  if (selectedCount === 0) {
+    setStatus('No selected items to move.');
+    return;
+  }
+
+  openMoveModal();
+}
+
+function openMoveModal() {
+  if (!state.multiSelectEnabled || getSelectedCount() === 0) {
+    return;
+  }
+
+  if ($moveTargetFolderSelect) {
+    $moveTargetFolderSelect.empty();
+    $moveTargetFolderSelect.append('<option value="root">All Bookmarks (root)</option>');
+
+    state.folders.forEach((folder) => {
+      $moveTargetFolderSelect.append(`<option value="${folder.id}">${escapeHtml(folder.name)}</option>`);
+    });
+  }
+
+  state.moveModalOpen = true;
+  $moveModalBackdrop.removeClass('is-hidden');
+  $moveModal.removeClass('is-hidden');
+}
+
+function closeMoveModal() {
+  state.moveModalOpen = false;
+  $moveModalBackdrop.addClass('is-hidden');
+  $moveModal.addClass('is-hidden');
+}
+
+async function submitMoveModal() {
+  const selectedCount = getSelectedCount();
+
+  if (!state.moveModalOpen || selectedCount === 0) {
+    return;
+  }
+
+  const rawValue = String($moveTargetFolderSelect.val() ?? 'root');
+  const targetFolderId = rawValue === 'root' ? null : Number(rawValue);
+
+  if (targetFolderId !== null && (!Number.isInteger(targetFolderId) || !state.folders.some((folder) => folder.id === targetFolderId))) {
+    setError('Invalid target folder.');
+    return;
+  }
+
+  try {
+    const bookmarkIds = Array.from(state.selectedBookmarkIds);
+    const folderIds = Array.from(state.selectedFolderIds);
+
+    for (const bookmarkId of bookmarkIds) {
+      await updateBookmark(bookmarkId, { folderId: targetFolderId });
+    }
+
+    for (const folderId of folderIds) {
+      if (folderId === targetFolderId) {
+        continue;
+      }
+
+      await updateFolder(folderId, { parentId: targetFolderId });
+    }
+
+    closeMoveModal();
+    clearMultiSelection();
+    await loadFolders();
+    await loadBookmarks();
+    setStatus('Selected items moved.');
+  } catch (error) {
+    console.error('Error moving selected items:', error);
+    setError(error?.message || 'Unable to move selected items.');
+  }
+}
+
+async function handleBulkDeleteSelected() {
+  const bookmarkIds = Array.from(state.selectedBookmarkIds);
+  const folderIds = Array.from(state.selectedFolderIds);
+
+  if (bookmarkIds.length === 0 && folderIds.length === 0) {
+    setStatus('No selected items to delete.');
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Delete ${bookmarkIds.length} bookmark(s) and ${folderIds.length} folder(s)? Folder delete is recursive.`
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    for (const bookmarkId of bookmarkIds) {
+      await deleteBookmark(bookmarkId);
+    }
+
+    for (const folderId of folderIds) {
+      await deleteFolder(folderId, true);
+    }
+
+    clearMultiSelection();
+    await loadFolders();
+    await loadBookmarks();
+    setStatus('Selected items deleted.');
+  } catch (error) {
+    console.error('Error deleting selected items:', error);
+    setError(error?.message || 'Unable to delete selected items.');
+  }
 }
 
 function bindEvents() {
   let searchTimer = null;
 
+  $viewModeChip.on('click', async () => {
+    await toggleViewMode();
+  });
+
+  $multiSelectChip.on('click', () => {
+    toggleMultiSelect();
+  });
+
+  $bulkOpenBtn.on('click', async () => {
+    await handleBulkOpenSelected();
+  });
+
+  $bulkMoveBtn.on('click', async () => {
+    await handleBulkMoveSelected();
+  });
+
+  $bulkDeleteBtn.on('click', async () => {
+    await handleBulkDeleteSelected();
+  });
+
+  $bulkClearBtn.on('click', () => {
+    if (getSelectedCount() === 0) {
+      selectAllVisibleItems();
+    } else {
+      clearMultiSelection();
+    }
+
+    render();
+  });
+
+  $moveModalClose.on('click', closeMoveModal);
+  $moveModalCancel.on('click', closeMoveModal);
+  $moveModalBackdrop.on('click', closeMoveModal);
+  $moveModalSubmit.on('click', async () => {
+    await submitMoveModal();
+  });
+
   $searchInput.on('input', () => {
     state.query = $searchInput.val().trim();
+
+    if (state.multiSelectEnabled) {
+      clearMultiSelection();
+    }
 
     if (searchTimer) {
       window.clearTimeout(searchTimer);
@@ -335,6 +646,11 @@ function bindEvents() {
   });
 
   $list.on('dragstart', '.vm-bookmark-row, .vm-folder-row', (e) => {
+    if (state.multiSelectEnabled) {
+      e.preventDefault();
+      return;
+    }
+
     const $row = $(e.currentTarget);
     const bookmarkId = $row.data('bookmark-id');
     const folderId = $row.data('folder-id');
@@ -352,6 +668,10 @@ function bindEvents() {
   });
 
   $list.on('dragover', '.vm-folder-row', (e) => {
+    if (state.multiSelectEnabled) {
+      return;
+    }
+
     e.preventDefault();
     $(e.currentTarget).addClass('vm-drag-over');
   });
@@ -361,6 +681,10 @@ function bindEvents() {
   });
 
   $list.on('drop', '.vm-folder-row', async (e) => {
+    if (state.multiSelectEnabled) {
+      return;
+    }
+
     e.preventDefault();
     const $target = $(e.currentTarget);
     $target.removeClass('vm-drag-over');
@@ -447,7 +771,30 @@ function bindEvents() {
       return;
     }
 
+    if (state.multiSelectEnabled) {
+      toggleFolderSelection(folderId);
+      return;
+    }
+
     navigateToFolder(folderId);
+  });
+
+  $list.on('click', '[data-action="toggle-folder-select"], [data-action="toggle-bookmark-select"]', (event) => {
+    event.stopPropagation();
+  });
+
+  $list.on('change', '[data-action="toggle-folder-select"]', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const folderId = Number($(event.currentTarget).data('folder-id'));
+    toggleFolderSelection(folderId);
+  });
+
+  $list.on('change', '[data-action="toggle-bookmark-select"]', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const bookmarkId = Number($(event.currentTarget).data('bookmark-id'));
+    toggleBookmarkSelection(bookmarkId);
   });
 
   $list.on('click', '[data-action="open-link"]', async (event) => {
@@ -458,6 +805,11 @@ function bindEvents() {
     const url = String($(event.currentTarget).data('url') ?? '').trim();
 
     if (!url) {
+      return;
+    }
+
+    if (state.multiSelectEnabled) {
+      toggleBookmarkSelection(bookmarkId);
       return;
     }
 
@@ -481,6 +833,10 @@ function bindEvents() {
     event.preventDefault();
     event.stopPropagation();
 
+    if (state.multiSelectEnabled) {
+      return;
+    }
+
     const bookmarkId = Number($(event.currentTarget).data('id'));
 
     if (!Number.isInteger(bookmarkId)) {
@@ -499,6 +855,10 @@ function bindEvents() {
   });
 
   $list.on('contextmenu', '.vm-folder-row, article[data-bookmark-id]', (event) => {
+    if (state.multiSelectEnabled) {
+      return;
+    }
+
     event.preventDefault();
 
     const $target = $(event.currentTarget);
@@ -548,6 +908,10 @@ function bindEvents() {
   });
 
   $breadcrumb.on('click', '[data-folder-id]', (event) => {
+    if (state.multiSelectEnabled) {
+      return;
+    }
+
     const folderIdRaw = String($(event.currentTarget).data('folder-id'));
     const folderId = folderIdRaw === 'all' ? null : Number(folderIdRaw);
     navigateToFolder(folderId);
@@ -685,6 +1049,16 @@ function bindEvents() {
     if (event.key === 'Escape') {
       hideContextMenu();
 
+      if (state.multiSelectEnabled) {
+        state.multiSelectEnabled = false;
+        clearMultiSelection();
+        render();
+      }
+
+      if (state.moveModalOpen) {
+        closeMoveModal();
+      }
+
       if (state.activeDrawer === 'bookmark') {
         closeDrawer();
       }
@@ -705,6 +1079,7 @@ function navigateToFolder(folderId) {
   }
 
   state.currentFolderId = parsedFolderId;
+  clearMultiSelection();
   loadBookmarks();
   renderBreadcrumb();
 }
@@ -982,9 +1357,66 @@ function handleListScroll() {
 }
 
 function render() {
+  const selectedCount = getSelectedCount();
+
   $count.text(state.totalBookmarks);
   $status.text(getStatusLabel());
   renderBreadcrumb();
+
+  $list.removeClass('vm-list-mode-list vm-list-mode-grid');
+  $list.addClass(state.viewMode === 'grid' ? 'vm-list-mode-grid' : 'vm-list-mode-list');
+
+  if ($multiSelectCount) {
+    $multiSelectCount.text(String(selectedCount));
+  }
+
+  if ($multiSelectPanel) {
+    $multiSelectPanel.toggleClass('is-hidden', !state.multiSelectEnabled);
+  }
+
+  if ($listWrap) {
+    $listWrap.toggleClass('with-multi-panel', state.multiSelectEnabled);
+  }
+
+  if ($bulkOpenBtn) {
+    $bulkOpenBtn.prop('disabled', state.selectedBookmarkIds.size === 0);
+  }
+
+  if ($bulkMoveBtn) {
+    $bulkMoveBtn.prop('disabled', selectedCount === 0);
+  }
+
+  if ($bulkDeleteBtn) {
+    $bulkDeleteBtn.prop('disabled', selectedCount === 0);
+  }
+
+  if ($bulkClearBtn) {
+    if (selectedCount === 0) {
+      $bulkClearBtn.attr('title', 'Select all');
+      $bulkClearBtn.attr('aria-label', 'Select all');
+      $bulkClearBtn.addClass('is-select-all');
+    } else {
+      $bulkClearBtn.attr('title', 'Clear selection');
+      $bulkClearBtn.attr('aria-label', 'Clear selection');
+      $bulkClearBtn.removeClass('is-select-all');
+    }
+
+    $bulkClearBtn.prop('disabled', false);
+  }
+
+  if ($multiSelectChip) {
+    $multiSelectChip.attr('title', state.multiSelectEnabled ? 'Multi select on' : 'Multi select off');
+    $multiSelectChip.attr('aria-label', state.multiSelectEnabled ? 'Multi select on' : 'Multi select off');
+    $multiSelectChip.toggleClass('is-on', state.multiSelectEnabled);
+    $multiSelectChip.toggleClass('is-active', state.multiSelectEnabled);
+  }
+
+  if ($viewModeChip) {
+    $viewModeChip.attr('title', state.viewMode === 'grid' ? 'Grid view' : 'List view');
+    $viewModeChip.attr('aria-label', state.viewMode === 'grid' ? 'Grid view active' : 'List view active');
+    $viewModeChip.toggleClass('is-grid', state.viewMode === 'grid');
+    $viewModeChip.toggleClass('is-active', state.viewMode === 'grid');
+  }
 
   $loadingState.toggleClass('is-hidden', !state.loading);
   $errorState.toggleClass('is-hidden', !state.error);
@@ -1016,9 +1448,19 @@ function render() {
   }
 
   foldersInView.forEach((folder) => {
+    const folderChecked = state.selectedFolderIds.has(folder.id);
+    const folderCheckboxHtml = state.multiSelectEnabled
+      ? `
+        <label class="vm-select-checkbox" aria-label="Select folder">
+          <input class="vm-item-checkbox" type="checkbox" data-action="toggle-folder-select" data-folder-id="${folder.id}" ${folderChecked ? 'checked' : ''} />
+        </label>
+      `
+      : '';
+
     const item = $(`
-      <article class="vm-card vm-folder-row" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button" draggable="true">
+      <article class="vm-card vm-folder-row${folderChecked ? ' is-active' : ''}" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button" draggable="true">
         <div class="vm-card-head">
+          ${folderCheckboxHtml}
           <div class="vm-icon"><i class="fas fa-folder"></i></div>
           <div class="vm-card-body">
             <div class="vm-bookmark-title">${escapeHtml(folder.name)}</div>
@@ -1033,21 +1475,37 @@ function render() {
   });
 
   state.bookmarks.forEach((bookmark) => {
+    const bookmarkChecked = state.selectedBookmarkIds.has(bookmark.id);
+    const bookmarkCheckboxHtml = state.multiSelectEnabled
+      ? `
+        <label class="vm-select-checkbox" aria-label="Select bookmark">
+          <input class="vm-item-checkbox" type="checkbox" data-action="toggle-bookmark-select" data-bookmark-id="${bookmark.id}" ${bookmarkChecked ? 'checked' : ''} />
+        </label>
+      `
+      : '';
+
+    const bookmarkMenuButtonHtml = state.multiSelectEnabled
+      ? ''
+      : `
+        <button class="button vm-link-button vm-row-menu-trigger" type="button" aria-label="Open bookmark menu" data-action="open-bookmark-menu" data-id="${bookmark.id}">
+          <span class="icon is-small"><i class="fas fa-ellipsis-v"></i></span>
+        </button>
+      `;
+
     const iconHtml = bookmark.icon
       ? `<img src="${escapeAttr(bookmark.icon.data)}" alt="" />`
       : '<i class="fas fa-bookmark"></i>';
 
     const item = $(`
-      <article class="vm-card vm-bookmark-row${state.selectedBookmark && state.selectedBookmark.id === bookmark.id ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}" draggable="true">
+      <article class="vm-card vm-bookmark-row${bookmarkChecked || (state.selectedBookmark && state.selectedBookmark.id === bookmark.id && !state.multiSelectEnabled) ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}" draggable="true">
         <div class="vm-card-head">
+          ${bookmarkCheckboxHtml}
           <div class="vm-icon">${iconHtml}</div>
           <div class="vm-card-body">
             <a class="vm-bookmark-title" href="${escapeAttr(bookmark.url)}" title="${escapeAttr(bookmark.title)}" data-action="open-link" data-id="${bookmark.id}" data-url="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.title)}</a>
             <div class="vm-bookmark-url" title="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.url)}</div>
           </div>
-          <button class="button vm-link-button vm-row-menu-trigger" type="button" aria-label="Open bookmark menu" data-action="open-bookmark-menu" data-id="${bookmark.id}">
-            <span class="icon is-small"><i class="fas fa-ellipsis-v"></i></span>
-          </button>
+          ${bookmarkMenuButtonHtml}
         </div>
       </article>
     `);

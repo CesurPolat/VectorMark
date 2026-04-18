@@ -46,7 +46,15 @@
           </div>
 
           <div class="vm-stats">
-            <span class="vm-chip"><i class="fas fa-bookmark"></i> <strong id="bookmark-count">0</strong> items</span>
+            <span class="vm-chip"><i class="fas fa-bookmark"></i> <strong id="bookmark-count">0</strong></span>
+            <button id="view-mode-chip" class="vm-chip vm-chip-button vm-view-chip" type="button" aria-label="Toggle view mode" title="Toggle view mode">
+              <i class="fas fa-list vm-view-list-icon" aria-hidden="true"></i>
+              <i class="fas fa-th vm-view-grid-icon" aria-hidden="true"></i>
+            </button>
+            <button id="multi-select-chip" class="vm-chip vm-chip-button vm-multi-chip" type="button" aria-label="Toggle multi select" title="Toggle multi select">
+              <i class="far fa-circle vm-multi-off-icon" aria-hidden="true"></i>
+              <i class="fas fa-check-circle vm-multi-on-icon" aria-hidden="true"></i>
+            </button>
             <div class="vm-chip sort-chip">
               <i class="fas fa-sort-amount-down"></i>
               <select id="shared-sort-select">
@@ -82,12 +90,55 @@
           <div id="bookmarks-list" class="vm-list"></div>
           <div id="loading-more-state" class="vm-loading-more is-hidden">Loading more bookmarks...</div>
         </section>
+
+        <section id="multi-select-panel" class="vm-multi-panel is-hidden" aria-live="polite">
+          <div class="vm-multi-panel-left">
+            <span class="vm-chip"><i class="fas fa-layer-group"></i> <strong id="multi-select-count">0</strong> selected</span>
+          </div>
+          <div class="vm-multi-panel-actions">
+            <button id="bulk-open-btn" class="button is-small is-info is-light vm-action-icon-btn" type="button" title="Open selected" aria-label="Open selected">
+              <span class="icon is-small"><i class="fas fa-external-link-alt"></i></span>
+            </button>
+            <button id="bulk-move-btn" class="button is-small is-link is-light vm-action-icon-btn" type="button" title="Move to folder" aria-label="Move to folder">
+              <span class="icon is-small"><i class="fas fa-exchange-alt"></i></span>
+            </button>
+            <button id="bulk-delete-btn" class="button is-small is-danger is-light vm-action-icon-btn" type="button" title="Delete selected" aria-label="Delete selected">
+              <span class="icon is-small"><i class="fas fa-trash"></i></span>
+            </button>
+            <button id="bulk-clear-btn" class="button is-small is-light vm-action-icon-btn" type="button" title="Clear selection" aria-label="Clear selection">
+              <span class="icon is-small">
+                <i class="fas fa-broom vm-clear-icon"></i>
+                <i class="fas fa-check-double vm-select-all-icon"></i>
+              </span>
+            </button>
+          </div>
+        </section>
       </section>
 
     </div>
 
     <div id="drawer-backdrop" class="vm-drawer-backdrop"></div>
     <div id="context-menu" class="vm-context-menu is-hidden" role="menu" aria-hidden="true"></div>
+
+    <div id="move-modal-backdrop" class="vm-modal-backdrop is-hidden"></div>
+    <section id="move-modal" class="vm-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="move-modal-title">
+      <header class="vm-modal-head">
+        <h3 id="move-modal-title" class="vm-modal-title">Move Selected Items</h3>
+        <button id="move-modal-close" class="button is-small vm-link-button" type="button" aria-label="Close move dialog">
+          <span class="icon"><i class="fas fa-times"></i></span>
+        </button>
+      </header>
+      <div class="vm-modal-body">
+        <label class="label" for="move-target-folder-select">Target folder</label>
+        <div class="select is-fullwidth">
+          <select id="move-target-folder-select"></select>
+        </div>
+      </div>
+      <footer class="vm-modal-foot">
+        <button id="move-modal-cancel" class="button is-light" type="button">Cancel</button>
+        <button id="move-modal-submit" class="button is-link" type="button">Move</button>
+      </footer>
+    </section>
 
     <aside id="bookmark-drawer" class="vm-drawer" aria-hidden="true">
       <div class="vm-drawer-header">
