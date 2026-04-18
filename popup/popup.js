@@ -2,7 +2,8 @@ import {
   deleteBookmarkByUrl,
   saveOrUpdateBookmarkByUrl,
   resolveBookmarkIconPayload,
-  listFolders
+  listFolders,
+  getBookmarkByUrl
 } from '../services/dbService.js';
 import { getSettings } from '../services/settingsService.js';
 
@@ -15,7 +16,17 @@ $(document).ready(async function () {
   $("#title-input").val(source.title);
   $("#icon-img").attr("src", source.favIconUrl);
 
+  const existing = await getBookmarkByUrl(currentUrl);
+  if (existing) {
+    selectedFolderId = existing.folderId;
+    $("#title-input").val(existing.title);
+  }
+
   await populateFolders();
+
+  if (selectedFolderId !== null) {
+    // We already set selectedFolderId, let's make sure populateFolders highlights it
+  }
 
   if (isSupportedUrl(currentUrl)) {
     try {
@@ -87,14 +98,28 @@ async function populateFolders() {
     const $list = $("#dynamic-folder-list");
     $list.empty();
 
+    // Reset indicator
+    $("#folder-list-container .dropdown-item").removeClass("is-active");
+
+    if (selectedFolderId === null) {
+      $("#folder-list-container .dropdown-item[data-id='null']").addClass("is-active");
+      $("#folder-drp .dropdown-trigger button span:first").text("All Bookmarks");
+    }
+
     folders.forEach(f => {
+      const isSelected = f.id === selectedFolderId;
       const item = $(`
-        <a href="#" class="dropdown-item" data-id="${f.id}">
+        <a href="#" class="dropdown-item${isSelected ? ' is-active' : ''}" data-id="${f.id}">
           <span class="icon is-small"><i class="fas fa-folder"></i></span>
           <span>${escapeHtml(f.name)}</span>
         </a>
       `);
       $list.append(item);
+
+      if (isSelected) {
+        $("#folder-drp .dropdown-trigger button span:first").text(f.name);
+        $("#folder-list-container .dropdown-item[data-id='null']").removeClass("is-active");
+      }
     });
   } catch (error) {
     console.error('Error populating folders:', error);

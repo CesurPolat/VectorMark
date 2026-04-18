@@ -630,6 +630,16 @@ export async function isUrlExist(url) {
   }
 }
 
+export async function getBookmarkByUrl(url) {
+  try {
+    const bookmark = await db.bookmarks.where('url').equals(url).first();
+    return bookmark ? normalizeBookmarkRecord(bookmark) : null;
+  } catch (error) {
+    console.error('Error getting bookmark by url:', error);
+    throw error;
+  }
+}
+
 export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.bookmarks, db.icons, async () => {
