@@ -1020,13 +1020,27 @@ export async function listFolders(options = {}) {
     const queryOptions = toQueryOptions(options);
 
     return await db.transaction('r', db.folders, db.bookmarks, async () => {
-      const folders = (await db.folders.toArray()).map(normalizeFolderRecord);
+      const allFolders = await db.folders.toArray();
+      const folders = allFolders.map(normalizeFolderRecord);
 
       const withCounts = await Promise.all(
         folders.map(async (folder) => {
+          const descendants = new Set();
+          const queue = [folder.id];
+
+          while (queue.length > 0) {
+            const currentId = queue.shift();
+            descendants.add(currentId);
+            allFolders.forEach((candidate) => {
+              if ((candidate.parentId ?? null) === currentId && !descendants.has(candidate.id)) {
+                queue.push(candidate.id);
+              }
+            });
+          }
+
+          const folderIds = Array.from(descendants);
           const bookmarkCount = await db.bookmarks
-            .where('folderId')
-            .equals(folder.id)
+            .filter((bookmark) => folderIds.includes(bookmark.folderId))
             .count();
 
           return {
@@ -1066,13 +1080,27 @@ export async function listChildFolders(parentId = null, options = {}) {
     const queryOptions = toQueryOptions(options);
 
     return await db.transaction('r', db.folders, db.bookmarks, async () => {
-      const folders = await getFoldersByParentId(normalizedParentId);
+      const allFolders = await db.folders.toArray();
+      const currentLevelFolders = await getFoldersByParentId(normalizedParentId);
 
       const withCounts = await Promise.all(
-        folders.map(async (folder) => {
+        currentLevelFolders.map(async (folder) => {
+          const descendants = new Set();
+          const queue = [folder.id];
+
+          while (queue.length > 0) {
+            const currentId = queue.shift();
+            descendants.add(currentId);
+            allFolders.forEach((candidate) => {
+              if ((candidate.parentId ?? null) === currentId && !descendants.has(candidate.id)) {
+                queue.push(candidate.id);
+              }
+            });
+          }
+
+          const folderIds = Array.from(descendants);
           const bookmarkCount = await db.bookmarks
-            .where('folderId')
-            .equals(folder.id)
+            .filter((bookmark) => folderIds.includes(bookmark.folderId))
             .count();
 
           return {
