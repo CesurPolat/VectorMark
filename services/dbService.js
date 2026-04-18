@@ -1165,14 +1165,9 @@ export async function renameFolder(folderId, newName) {
   }
 }
 
-export async function deleteFolder(folderId, moveBookmarksTo = null) {
+export async function deleteFolder(folderId, deleteRecursively = false) {
   try {
     const parsedFolderId = normalizeFolderId(folderId);
-    const parsedMoveFolderId = normalizeFolderId(moveBookmarksTo);
-
-    if (parsedMoveFolderId !== null && parsedMoveFolderId === parsedFolderId) {
-      throw new Error('Destination folder cannot be the same folder.');
-    }
 
     return await db.transaction('rw', db.folders, db.bookmarks, async () => {
       const now = getNowTimestamp();
@@ -1197,26 +1192,15 @@ export async function deleteFolder(folderId, moveBookmarksTo = null) {
         });
       }
 
-      if (parsedMoveFolderId !== null && descendants.has(parsedMoveFolderId)) {
-        throw new Error('Destination folder cannot be inside the folder being deleted.');
-      }
-
       const folderIdsToDelete = Array.from(descendants);
 
-      if (parsedMoveFolderId !== null) {
-        const destination = await db.folders.get(parsedMoveFolderId);
-
-        if (!destination) {
-          throw new Error('Destination folder not found.');
-        }
-
+      if (deleteRecursively) {
+        // Alt klasörler ve içindeki bookmarkları kalıcı olarak sil
         await db.bookmarks
           .filter((bookmark) => folderIdsToDelete.includes(bookmark.folderId))
-          .modify((bookmark) => {
-            bookmark.folderId = parsedMoveFolderId;
-            bookmark.updatedAt = now;
-          });
+          .delete();
       } else {
+        // Sadece klasörleri sil, bookmarkları root'a taşı
         await db.bookmarks
           .filter((bookmark) => folderIdsToDelete.includes(bookmark.folderId))
           .modify((bookmark) => {

@@ -1292,13 +1292,13 @@ async function handleContextMenuAction(action) {
     }
 
     if (action === 'delete-folder') {
-      const confirmed = window.confirm(`Delete folder "${folder.name}" and move its bookmarks to root?`);
+      const confirmed = window.confirm(`Delete folder "${folder.name}" AND all its contents (bookmarks and subfolders)?`);
 
       if (!confirmed) {
         return;
       }
 
-      await deleteFolder(folder.id, null);
+      await deleteFolder(folder.id, true);
       await loadFolders();
       await loadBookmarks();
     }
