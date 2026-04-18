@@ -7,6 +7,7 @@
   createFolder,
   listFolders,
   renameFolder,
+  updateFolder,
   deleteFolder,
   recordBookmarkClick,
   moveBookmarkInCustomOrder,
@@ -83,6 +84,7 @@ let $settingsDrawer;
 let $drawerTitle;
 let $editTitle;
 let $editUrl;
+let $editFolderSelect;
 let $drawerSave;
 let $drawerClose;
 let $drawerCancel;
@@ -294,6 +296,7 @@ function cacheDom() {
   $drawerTitle = $('#drawer-title');
   $editTitle = $('#edit-title');
   $editUrl = $('#edit-url');
+  $editFolderSelect = $('#edit-folder-select');
   $drawerSave = $('#drawer-save');
   $drawerClose = $('#drawer-close');
   $drawerCancel = $('#drawer-cancel');
@@ -329,6 +332,97 @@ function bindEvents() {
     searchTimer = window.setTimeout(() => {
       loadBookmarks();
     }, 180);
+  });
+
+  $list.on('dragstart', '.vm-bookmark-row, .vm-folder-row', (e) => {
+    const $row = $(e.currentTarget);
+    const bookmarkId = $row.data('bookmark-id');
+    const folderId = $row.data('folder-id');
+
+    if (bookmarkId) {
+      e.originalEvent.dataTransfer.setData('text/plain', JSON.stringify({ type: 'bookmark', id: bookmarkId }));
+    } else if (folderId) {
+      e.originalEvent.dataTransfer.setData('text/plain', JSON.stringify({ type: 'folder', id: folderId }));
+    }
+    $row.addClass('is-dragging');
+  });
+
+  $list.on('dragend', '.vm-bookmark-row, .vm-folder-row', (e) => {
+    $(e.currentTarget).removeClass('is-dragging');
+  });
+
+  $list.on('dragover', '.vm-folder-row', (e) => {
+    e.preventDefault();
+    $(e.currentTarget).addClass('vm-drag-over');
+  });
+
+  $list.on('dragleave', '.vm-folder-row', (e) => {
+    $(e.currentTarget).removeClass('vm-drag-over');
+  });
+
+  $list.on('drop', '.vm-folder-row', async (e) => {
+    e.preventDefault();
+    const $target = $(e.currentTarget);
+    $target.removeClass('vm-drag-over');
+
+    const targetFolderId = Number($target.data('folder-id'));
+    const dataStr = e.originalEvent.dataTransfer.getData('text/plain');
+
+    if (!dataStr || !targetFolderId) return;
+
+    try {
+      const data = JSON.parse(dataStr);
+      if (data.type === 'bookmark') {
+        await updateBookmark(data.id, { folderId: targetFolderId });
+      } else if (data.type === 'folder') {
+        if (data.id === targetFolderId) return;
+        await updateFolder(data.id, { parentId: targetFolderId });
+      }
+      await loadFolders();
+      await loadBookmarks();
+    } catch (err) {
+      console.error('Drop error:', err);
+      setError(err.message);
+    }
+  });
+
+  $breadcrumb.on('dragover', '[data-folder-id]', (e) => {
+    const $target = $(e.currentTarget);
+    const targetFolderId = $target.data('folder-id');
+    // We only care about root (all) or defined ancestors
+    e.preventDefault();
+    $target.addClass('vm-drag-over');
+  });
+
+  $breadcrumb.on('dragleave', '[data-folder-id]', (e) => {
+    $(e.currentTarget).removeClass('vm-drag-over');
+  });
+
+  $breadcrumb.on('drop', '[data-folder-id]', async (e) => {
+    e.preventDefault();
+    const $target = $(e.currentTarget);
+    $target.removeClass('vm-drag-over');
+
+    const rawId = $target.data('folder-id');
+    const targetFolderId = rawId === 'all' ? null : Number(rawId);
+    const dataStr = e.originalEvent.dataTransfer.getData('text/plain');
+
+    if (!dataStr) return;
+
+    try {
+      const data = JSON.parse(dataStr);
+      if (data.type === 'bookmark') {
+        await updateBookmark(data.id, { folderId: targetFolderId });
+      } else if (data.type === 'folder') {
+        if (data.id === targetFolderId) return;
+        await updateFolder(data.id, { parentId: targetFolderId });
+      }
+      await loadFolders();
+      await loadBookmarks();
+    } catch (err) {
+      console.error('Drop to breadcrumb error:', err);
+      setError(err.message);
+    }
   });
 
   $listWrap.on('scroll', handleListScroll);
@@ -859,7 +953,7 @@ function renderBreadcrumb() {
     const idAttr = crumb.id === null ? 'all' : String(crumb.id);
 
     if (isLast) {
-      pieces.push(`<span class="vm-crumb is-active">${escapeHtml(crumb.label)}</span>`);
+      pieces.push(`<span class="vm-crumb is-active" data-folder-id="${escapeAttr(idAttr)}">${escapeHtml(crumb.label)}</span>`);
     } else {
       pieces.push(`<button class="vm-crumb" type="button" data-folder-id="${escapeAttr(idAttr)}">${escapeHtml(crumb.label)}</button>`);
       pieces.push('<span class="vm-crumb-sep"><i class="fas fa-chevron-right"></i></span>');
@@ -923,7 +1017,7 @@ function render() {
 
   foldersInView.forEach((folder) => {
     const item = $(`
-      <article class="vm-card vm-folder-row" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button">
+      <article class="vm-card vm-folder-row" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button" draggable="true">
         <div class="vm-card-head">
           <div class="vm-icon"><i class="fas fa-folder"></i></div>
           <div class="vm-card-body">
@@ -944,7 +1038,7 @@ function render() {
       : '<i class="fas fa-bookmark"></i>';
 
     const item = $(`
-      <article class="vm-card vm-bookmark-row${state.selectedBookmark && state.selectedBookmark.id === bookmark.id ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}">
+      <article class="vm-card vm-bookmark-row${state.selectedBookmark && state.selectedBookmark.id === bookmark.id ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}" draggable="true">
         <div class="vm-card-head">
           <div class="vm-icon">${iconHtml}</div>
           <div class="vm-card-body">
@@ -1246,6 +1340,15 @@ function openDrawer(bookmark) {
   $drawerTitle.text(`Edit: ${bookmark.title}`);
   $editTitle.val(bookmark.title);
   $editUrl.val(bookmark.url);
+
+  // Populate folder select
+  $editFolderSelect.empty();
+  $editFolderSelect.append('<option value="null">All Bookmarks</option>');
+  state.folders.forEach(f => {
+    const selected = f.id === bookmark.folderId ? ' selected' : '';
+    $editFolderSelect.append(`<option value="${f.id}"${selected}>${escapeHtml(f.name)}</option>`);
+  });
+
   $drawer.attr('aria-hidden', 'false');
   $drawerBackdrop.addClass('is-open');
   $drawer.addClass('is-open');
@@ -1336,6 +1439,8 @@ async function saveBookmark() {
 
   const title = $editTitle.val().trim();
   const url = $editUrl.val().trim();
+  const folderVal = $editFolderSelect.val();
+  const folderId = folderVal === 'null' ? null : Number(folderVal);
 
   if (!title || !url) {
     setError('Title and URL are required before saving.');
@@ -1347,7 +1452,8 @@ async function saveBookmark() {
   try {
     await updateBookmark(state.selectedBookmark.id, {
       title,
-      url
+      url,
+      folderId
     });
 
     closeDrawer();

@@ -488,6 +488,23 @@ body {
   font-size: 0.75rem;
 }
 
+.is-dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.vm-drag-over,
+.vm-folder-row.vm-drag-over {
+  border: 1px dashed var(--vm-accent) !important;
+  background: rgba(122, 249, 59, 0.1) !important;
+  box-shadow: 0 0 10px rgba(122, 249, 59, 0.2);
+}
+
+.vm-crumb.vm-drag-over {
+  color: var(--vm-accent) !important;
+  background: rgba(122, 249, 59, 0.05) !important;
+}
+
 .vm-list {
   display: flex;
   flex-direction: column;

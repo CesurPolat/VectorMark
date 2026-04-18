@@ -1235,6 +1235,94 @@ export async function deleteFolder(folderId, moveBookmarksTo = null) {
   }
 }
 
+export async function updateFolder(folderId, updates) {
+  try {
+    const parsedFolderId = normalizeFolderId(folderId);
+
+    if (parsedFolderId === null) {
+      throw new Error('Folder ID is required for update.');
+    }
+
+    return await db.transaction('rw', db.folders, async () => {
+      const current = await db.folders.get(parsedFolderId);
+
+      if (!current) {
+        throw new Error('Folder not found.');
+      }
+
+      const nextFolder = {
+        ...current,
+        ...updates
+      };
+
+      const hasParentUpdate = Object.prototype.hasOwnProperty.call(updates || {}, 'parentId');
+
+      if (hasParentUpdate) {
+        const nextParentId = normalizeParentId(updates.parentId);
+
+        if (nextParentId !== null) {
+          if (nextParentId === parsedFolderId) {
+            throw new Error('A folder cannot be its own parent.');
+          }
+
+          const allFolders = await db.folders.toArray();
+          const descendants = new Set();
+          const queue = [parsedFolderId];
+
+          while (queue.length > 0) {
+            const currentId = queue.shift();
+            descendants.add(currentId);
+
+            allFolders.forEach((candidate) => {
+              if (!descendants.has(candidate.id) && (candidate.parentId ?? null) === currentId) {
+                queue.push(candidate.id);
+              }
+            });
+          }
+
+          if (descendants.has(nextParentId)) {
+            throw new Error('A folder cannot be moved into its own subfolder.');
+          }
+        }
+
+        nextFolder.parentId = nextParentId;
+
+        if (nextFolder.parentId !== current.parentId && !Object.prototype.hasOwnProperty.call(updates || {}, 'customOrder')) {
+          nextFolder.customOrder = await getNextFolderCustomOrder(nextFolder.parentId);
+        }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(updates || {}, 'name')) {
+        const normalizedName = normalizeFolderName(updates.name);
+
+        if (!normalizedName) {
+          throw new Error('Folder name is required.');
+        }
+
+        const siblingFoldersSafe = await getFoldersByParentId(nextFolder.parentId ?? null);
+        const hasDuplicateName = siblingFoldersSafe.some((folder) => {
+          return folder.id !== parsedFolderId && folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
+        });
+
+        if (hasDuplicateName) {
+          throw new Error('A folder with this name already exists in this location.');
+        }
+
+        nextFolder.name = normalizedName;
+      }
+
+      nextFolder.updatedAt = getNowTimestamp();
+      nextFolder.customOrder = normalizeCustomOrder(nextFolder.customOrder, current.id || 0);
+
+      await db.folders.put(nextFolder);
+      return parsedFolderId;
+    });
+  } catch (error) {
+    console.error('Error updating folder:', error);
+    throw error;
+  }
+}
+
 export async function exportDatabase() {
   try {
     return await db.transaction('r', db.folders, db.icons, db.bookmarks, async () => {

@@ -1,10 +1,12 @@
 import {
   deleteBookmarkByUrl,
   saveOrUpdateBookmarkByUrl,
-  resolveBookmarkIconPayload
+  resolveBookmarkIconPayload,
+  listFolders
 } from '../services/dbService.js';
 import { getSettings } from '../services/settingsService.js';
 
+let selectedFolderId = null;
 
 $(document).ready(async function () {
   const source = await resolveSourceTabContext();
@@ -12,6 +14,8 @@ $(document).ready(async function () {
 
   $("#title-input").val(source.title);
   $("#icon-img").attr("src", source.favIconUrl);
+
+  await populateFolders();
 
   if (isSupportedUrl(currentUrl)) {
     try {
@@ -54,6 +58,20 @@ $(document).ready(async function () {
     $(this).toggleClass("is-active");
   });
 
+  $(document).on("click", "#folder-list-container .dropdown-item", function (e) {
+    e.preventDefault();
+    const id = $(this).data("id");
+    const name = $(this).find("span:last").text();
+
+    selectedFolderId = (id === "null" || id === null) ? null : Number(id);
+
+    // Update UI
+    $("#folder-list-container .dropdown-item").removeClass("is-active");
+    $(this).addClass("is-active");
+    $("#folder-drp .dropdown-trigger button span:first").text(name);
+    $("#folder-drp").removeClass("is-active");
+  });
+
   $("#other-bookmarks-btn").click(async function () {
     if (source.tabId) {
       await chrome.sidePanel.open({ tabId: source.tabId });
@@ -62,6 +80,32 @@ $(document).ready(async function () {
   });
 
 });
+
+async function populateFolders() {
+  try {
+    const folders = await listFolders({ sortBy: 'name', sortDir: 'asc' });
+    const $list = $("#dynamic-folder-list");
+    $list.empty();
+
+    folders.forEach(f => {
+      const item = $(`
+        <a href="#" class="dropdown-item" data-id="${f.id}">
+          <span class="icon is-small"><i class="fas fa-folder"></i></span>
+          <span>${escapeHtml(f.name)}</span>
+        </a>
+      `);
+      $list.append(item);
+    });
+  } catch (error) {
+    console.error('Error populating folders:', error);
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
 
 async function resolveSourceTabContext() {
   const params = new URLSearchParams(window.location.search);
@@ -102,7 +146,7 @@ async function saveBookmark(url, data) {
   await saveOrUpdateBookmarkByUrl(
     $("#title-input").val(),
     url,
-    null,
+    selectedFolderId,
     iconPayload
   );
 }
