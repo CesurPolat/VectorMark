@@ -1,0 +1,128 @@
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(circle at 20% 0%, #1f2f4d 0%, #0f141e 60%, #0a0d14 100%);
+  color: #e8ecf6;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+}
+
+.vm-settings-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px 16px 28px;
+}
+
+.vm-settings-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.vm-kicker {
+  margin: 0 0 6px;
+  font-size: 0.74rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #8ea5d7;
+}
+
+.vm-title {
+  margin: 0;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: #f4f7ff;
+}
+
+.vm-link-button {
+  border: 1px solid #2f3c56;
+  color: #b9c8ea;
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.vm-link-button:hover {
+  color: #d7e2ff;
+  border-color: #4d6291;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.vm-settings-card {
+  background: rgba(14, 20, 31, 0.87);
+  border: 1px solid #29344b;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 14px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.25);
+}
+
+.vm-settings-card .title {
+  color: #f4f7ff;
+  margin-bottom: 12px;
+}
+
+.vm-settings-field {
+  margin-bottom: 12px;
+}
+
+.vm-settings-field .label {
+  color: #d2dcf3;
+}
+
+.vm-settings-checkbox {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: #d2dcf3;
+}
+
+.vm-settings-note {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: #91a3c9;
+}
+
+.vm-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vm-settings-status {
+  min-height: 24px;
+  margin: 4px 2px 0;
+  color: #c4d5fc;
+  font-size: 0.94rem;
+}
+
+.select select,
+.input {
+  background: #0d1320;
+  border-color: #2f3f5c;
+  color: #e8ecf6;
+}
+
+.select select:focus,
+.input:focus {
+  border-color: #5a74a8;
+  box-shadow: 0 0 0 0.125em rgba(90, 116, 168, 0.35);
+}
+
+@media (max-width: 640px) {
+  .vm-settings-page {
+    padding: 14px 12px 20px;
+  }
+
+  .vm-title {
+    font-size: 1.6rem;
+  }
+
+  .vm-settings-card {
+    padding: 13px;
+  }
+}

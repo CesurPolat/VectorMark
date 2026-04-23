@@ -930,9 +930,7 @@ function bindEvents() {
     }
   });
 
-  $settingsOpenBtn.on('click', openSettingsDrawer);
-  $settingsClose.on('click', closeSettingsDrawer);
-  $settingsCancel.on('click', closeSettingsDrawer);
+  $settingsOpenBtn.on('click', openSettingsPage);
   $fullscreenToggleBtn.on('click', toggleFullscreenMode);
   $panelCloseBtn.on('click', closePanelWindow);
 
@@ -1026,11 +1024,6 @@ function bindEvents() {
   $drawerBackdrop.on('click', () => {
     if (state.activeDrawer === 'bookmark') {
       closeDrawer();
-      return;
-    }
-
-    if (state.activeDrawer === 'settings') {
-      closeSettingsDrawer();
     }
   });
 
@@ -1063,9 +1056,6 @@ function bindEvents() {
         closeDrawer();
       }
 
-      if (state.activeDrawer === 'settings') {
-        closeSettingsDrawer();
-      }
     }
   });
 }
@@ -1837,35 +1827,54 @@ function closeDrawer() {
   render();
 }
 
-async function openSettingsDrawer() {
-  if (state.activeDrawer === 'bookmark') {
-    closeDrawer();
+async function openSettingsPage() {
+  const settingsUrl = chrome?.runtime?.getURL
+    ? chrome.runtime.getURL('settings/settings.html')
+    : '../settings/settings.html';
+
+  if (chrome?.runtime?.openOptionsPage) {
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.runtime.openOptionsPage(() => {
+          const runtimeError = chrome.runtime?.lastError;
+
+          if (runtimeError) {
+            reject(new Error(runtimeError.message));
+            return;
+          }
+
+          resolve();
+        });
+      });
+
+      return;
+    } catch (error) {
+      console.error('openOptionsPage failed, falling back to tab open:', error);
+    }
   }
 
-  try {
-    const latest = await getSettings();
-    applySavedSettings(latest);
-  } catch (error) {
-    console.error('Error refreshing settings before opening drawer:', error);
+  if (chrome?.tabs?.create) {
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.tabs.create({ url: settingsUrl, active: true }, () => {
+          const runtimeError = chrome.runtime?.lastError;
+
+          if (runtimeError) {
+            reject(new Error(runtimeError.message));
+            return;
+          }
+
+          resolve();
+        });
+      });
+
+      return;
+    } catch (error) {
+      console.error('tabs.create fallback failed:', error);
+    }
   }
 
-  state.activeDrawer = 'settings';
-  $settingsDrawer.attr('aria-hidden', 'false');
-  $settingsDrawer.addClass('is-open');
-  $drawerBackdrop.addClass('is-open');
-  syncSettingsControls();
-  setSettingsStatus('Choose an action.', false);
-}
-
-function closeSettingsDrawer() {
-  if (state.settingsBusy) {
-    return;
-  }
-
-  $settingsDrawer.removeClass('is-open');
-  $settingsDrawer.attr('aria-hidden', 'true');
-  $drawerBackdrop.removeClass('is-open');
-  state.activeDrawer = null;
+  window.location.href = settingsUrl;
 }
 
 async function toggleFullscreenMode() {
