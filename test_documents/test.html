@@ -213,6 +213,7 @@
         <div class="meta-pill">Count: <span id="document-count">0</span></div>
         <div class="meta-pill">ULID valid: <span id="ulid-validity">Waiting</span></div>
         <div class="meta-pill">Unique IDs: <span id="ulid-uniqueness">Waiting</span></div>
+        <div class="meta-pill" style="background: #f0f5ff; color: #1e40af;">Vector DB: <strong>LanceDB</strong></div>
       </div>
     </section>
 
@@ -260,13 +261,13 @@
 
     <section class="panel-grid">
       <article class="panel-card">
-        <h2 class="title is-5 mb-2">Browser-Only Vector Store</h2>
-        <p class="subtitle is-7 mb-0">IndexedDB stores the generated documents and local embeddings. Search runs fully in the browser with cosine similarity.</p>
+        <h2 class="title is-5 mb-2">LanceDB Vector Store</h2>
+        <p class="subtitle is-7 mb-0">LanceDB provides advanced vector search with SQL filtering, metadata indexing, and optimized similarity search in the browser.</p>
 
         <div class="form-grid">
           <div class="full-span">
-            <label class="label" for="store-name">Store Name</label>
-            <input id="store-name" class="input" type="text" value="VectorMarkBrowserVectorDemo / testDocuments" disabled />
+            <label class="label" for="store-name">Store Configuration</label>
+            <input id="store-name" class="input" type="text" value="Database: VectorMarkLanceTest | Table: testDocuments" disabled />
           </div>
           <div class="full-span">
             <label class="label" for="vector-query">Query Text</label>
@@ -290,8 +291,68 @@
         <div id="store-results" class="result-list"></div>
       </article>
     </section>
+
+    <section class="panel-grid">
+      <article class="panel-card">
+        <h2 class="title is-5 mb-2">Advanced Features & Testing</h2>
+        <p class="subtitle is-7 mb-0">LanceDB test suite and advanced query capabilities.</p>
+        
+        <div style="margin-top: 16px; padding: 14px; background: #f9fafb; border-radius: 12px;">
+          <h3 class="title is-6 mb-2">Run Test Suite</h3>
+          <p style="font-size: 0.9rem; margin-bottom: 12px;">Execute comprehensive LanceDB integration tests in the browser console:</p>
+          <code style="display: block; background: #f0f0f0; padding: 8px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 12px;">
+            window.runLanceDBTests()
+          </code>
+          <p style="font-size: 0.85rem; color: #666;">Tests include: initialization, document insertion, vector search, metadata filtering, and store cleanup.</p>
+        </div>
+
+        <div style="margin-top: 16px; padding: 14px; background: #f9fafb; border-radius: 12px;">
+          <h3 class="title is-6 mb-2">Import Test Runner</h3>
+          <p style="font-size: 0.9rem; margin-bottom: 12px;">For manual testing, import the test runner module in browser console:</p>
+          <code style="display: block; background: #f0f0f0; padding: 8px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 12px;">
+            import { runLanceDBTests } from './test_documents/lancedbTestRunner.js'
+          </code>
+          <p style="font-size: 0.85rem; color: #666;">Then call: <code>runLanceDBTests()</code></p>
+        </div>
+
+        <div style="margin-top: 16px; padding: 14px; background: #eef2ff; border-radius: 12px; border-left: 4px solid #1e40af;">
+          <h3 class="title is-6 mb-2" style="color: #1e40af;">About LanceDB</h3>
+          <ul style="font-size: 0.9rem; margin-left: 16px; color: #333;">
+            <li>✓ Advanced vector similarity search with configurable distance metrics</li>
+            <li>✓ SQL WHERE clauses for metadata filtering (status, date range, tags)</li>
+            <li>✓ WASM-based execution in browser environment (Extension-compatible)</li>
+            <li>✓ IndexedDB or OPFS backend (auto-detected for maximum compatibility)</li>
+            <li>✓ 384-dimensional embeddings from all-MiniLM-L6-v2 model</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="panel-card">
+        <h2 class="title is-5 mb-2">Documentation</h2>
+        <p class="subtitle is-7 mb-0">Technical references and implementation details.</p>
+        
+        <div style="margin-top: 12px;">
+          <h3 class="title is-6 mb-2">Files</h3>
+          <ul style="font-size: 0.9rem; margin-left: 16px; color: #333;">
+            <li><code>lancedbConfig.js</code> — Environment detection and WASM path configuration</li>
+            <li><code>lancedbVectorStore.js</code> — Core LanceDB vector store API</li>
+            <li><code>lancedbTestRunner.js</code> — Comprehensive test suite for all features</li>
+            <li><code>test.js</code> — UI integration with LanceDB backend</li>
+            <li><code>browserVectorStore.js</code> — Legacy Dexie-based store (reference)</li>
+          </ul>
+        </div>
+
+        <div style="margin-top: 14px; padding: 12px; background: #f0fdf4; border-radius: 10px;">
+          <h3 class="title is-6 mb-2" style="color: #166534;">Implementation Notes</h3>
+          <p style="font-size: 0.85rem; color: #333;">
+            LanceDB replaces Dexie as the vector store backend in test_documents. All production bookmark data remains on Dexie. 
+            The test database is isolated and does not affect the main VectorMark application.
+          </p>
+        </div>
+      </article>
+    </section>
   </main>
 
-  <script type="module" src="./test.js"></script>
+  <script type="module" src="./test-init.js"></script>
 </body>
 </html>

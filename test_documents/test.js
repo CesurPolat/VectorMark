@@ -2,10 +2,44 @@ import {
   clearIndexedDocuments,
   countIndexedDocuments,
   queryIndexedDocuments,
-  upsertIndexedDocuments
-} from './browserVectorStore.js';
-import { env, pipeline } from '../node_modules/@huggingface/transformers/dist/transformers.min.js';
-import { isValid, ulid } from '../node_modules/ulid/dist/index.js';
+  upsertIndexedDocuments,
+  initLanceDB
+} from './lancedbVectorStore.js';
+
+// Dynamic module loading for extension compatibility
+let transformersModule;
+let ulidModule;
+let importPromise = null;
+
+const getModules = async () => {
+  if (importPromise) return importPromise;
+
+  importPromise = (async () => {
+    if (!transformersModule || !ulidModule) {
+      try {
+        transformersModule = await import('../node_modules/@huggingface/transformers/dist/transformers.min.js');
+        ulidModule = await import('../node_modules/ulid/dist/browser/index.js');
+      } catch (error) {
+        console.error('Failed to import modules:', error);
+        throw error;
+      }
+    }
+    return { transformersModule, ulidModule };
+  })();
+
+  return importPromise;
+};
+
+// Lazy getters for modules
+let env, pipeline, isValid, ulid;
+
+const initModules = async () => {
+  const { transformersModule: tm, ulidModule: um } = await getModules();
+  env = tm.env;
+  pipeline = tm.pipeline;
+  isValid = um.isValid;
+  ulid = um.ulid;
+};
 
 const DEFAULT_DOCUMENT_COUNT = 5;
 const TITLE_VARIANTS = [
@@ -56,17 +90,27 @@ const state = {
   extractor: null
 };
 
-env.allowLocalModels = true;
-env.allowRemoteModels = false;
-env.localModelPath = typeof chrome !== 'undefined' && chrome?.runtime?.getURL
-  ? chrome.runtime.getURL('models/')
-  : new URL('../models/', import.meta.url).href;
-env.backends.onnx.wasm.wasmPaths = typeof chrome !== 'undefined' && chrome?.runtime?.getURL
-  ? chrome.runtime.getURL('models/all-MiniLM-L6-v2/wasm/')
-  : new URL('../models/all-MiniLM-L6-v2/wasm/', import.meta.url).href;
-env.backends.onnx.wasm.useWasmModule = false;
-env.backends.onnx.wasm.allowLocalModels = true;
-env.backends.onnx.wasm.proxy = false;
+// Initialize environment after modules are loaded
+const initEnvironment = () => initModules().then(() => {
+  if (env) {
+    env.allowLocalModels = true;
+    env.allowRemoteModels = false;
+    /* env.localModelPath = typeof chrome !== 'undefined' && chrome?.runtime?.getURL
+      ? chrome.runtime.getURL('models/')
+      : new URL('../models/', import.meta.url).href; */
+    const wasmBase = typeof chrome !== 'undefined' && chrome?.runtime?.getURL
+      ? chrome.runtime.getURL('models/all-MiniLM-L6-v2/wasm/')
+      : new URL('../models/all-MiniLM-L6-v2/wasm/', import.meta.url).href;
+    env.backends.onnx.wasm.wasmPaths = {
+      mjs: `${wasmBase}ort-wasm-simd-threaded.jsep.mjs`,
+      wasm: `${wasmBase}ort-wasm-simd-threaded.jsep.wasm`
+    };
+
+    env.backends.onnx.wasm.useWasmModule = false;
+    env.backends.onnx.wasm.allowLocalModels = true;
+    env.backends.onnx.wasm.proxy = false;
+  }
+});
 
 /**
  * @typedef {Object} TestDocument
@@ -81,9 +125,11 @@ env.backends.onnx.wasm.proxy = false;
 /**
  * Generate a readable array of test documents with ULID identifiers.
  * @param {number} [count=5]
- * @returns {TestDocument[]}
+ * @returns {Promise<TestDocument[]>}
  */
-export function createTestDocuments(count = DEFAULT_DOCUMENT_COUNT) {
+export async function createTestDocuments(count = DEFAULT_DOCUMENT_COUNT) {
+  await initModules();
+
   const safeCount = Number.isInteger(count) && count > 0 ? count : DEFAULT_DOCUMENT_COUNT;
   const createdAtBase = Date.now();
 
@@ -118,16 +164,18 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-function validateDocumentSet(documents) {
+async function validateDocumentSet(documents) {
+  await initModules();
+
   const validUlids = documents.every((documentItem) => isValid(documentItem.id) && documentItem.id.length === 26);
   const uniqueIds = new Set(documents.map((documentItem) => documentItem.id)).size === documents.length;
 
   return { validUlids, uniqueIds };
 }
 
-function renderDocuments(documents) {
+async function renderDocuments(documents) {
   state.documents = documents;
-  const { validUlids, uniqueIds } = validateDocumentSet(documents);
+  const { validUlids, uniqueIds } = await validateDocumentSet(documents);
 
   documentCount.textContent = String(documents.length);
   ulidValidity.textContent = validUlids ? 'Yes' : 'No';
@@ -168,7 +216,9 @@ function clearComposer() {
   customStatusInput.value = 'draft';
 }
 
-function addCustomDocument() {
+async function addCustomDocument() {
+  await initModules();
+
   const title = String(customTitleInput.value || '').trim();
   const content = String(customContentInput.value || '').trim();
   const status = String(customStatusInput.value || 'draft').trim() || 'draft';
@@ -188,7 +238,7 @@ function addCustomDocument() {
     status
   };
 
-  renderDocuments([nextDocument, ...state.documents]);
+  await renderDocuments([nextDocument, ...state.documents]);
   clearComposer();
   renderChromaResults([]);
   setStoreStatus('Custom document added to the current list. Re-index to include it in search.', false);
@@ -201,6 +251,8 @@ function setStoreStatus(message, isError = false) {
 }
 
 async function getEmbedder() {
+  await initModules();
+
   if (!state.extractor) {
     setStoreStatus('Loading local embedding model...');
     state.extractor = await pipeline('feature-extraction', 'all-MiniLM-L6-v2', {
@@ -264,11 +316,17 @@ function toIndexedPayload(documents, embeddings) {
 
 async function initializeStore() {
   try {
+    setStoreStatus('Initializing LanceDB...');
+    const initResult = await initLanceDB();
     const count = await countIndexedDocuments();
-    setStoreStatus(`Store ready. Indexed documents currently stored: ${count}.`);
+    if (initResult?.status === 'fallback') {
+      setStoreStatus(`LanceDB is not supported in this extension context. Using browser store instead. Indexed documents currently stored: ${count}.`);
+      return;
+    }
+    setStoreStatus(`LanceDB ready. Indexed documents currently stored: ${count}.`);
   } catch (error) {
-    console.error('Store initialization error:', error);
-    setStoreStatus(`Store initialization failed: ${error.message}`, true);
+    console.error('LanceDB initialization error:', error);
+    setStoreStatus(`LanceDB initialization failed: ${error.message}`, true);
   }
 }
 
@@ -278,17 +336,18 @@ async function indexDocumentsToStore() {
     return;
   }
 
-  setStoreStatus('Generating local embeddings and indexing documents...');
+  setStoreStatus('Generating local embeddings and indexing documents in LanceDB...');
 
   try {
+    await initLanceDB();
     const payload = toChromaPayload(state.documents);
     const embeddings = await embedTexts(payload.documents);
     const indexedRows = toIndexedPayload(state.documents, embeddings);
     const indexedCount = await upsertIndexedDocuments(indexedRows);
     const totalCount = await countIndexedDocuments();
-    setStoreStatus(`Indexed ${indexedCount} document(s). Browser store now contains ${totalCount} total record(s).`);
+    setStoreStatus(`Indexed ${indexedCount} document(s). LanceDB now contains ${totalCount} total record(s).`);
   } catch (error) {
-    console.error('Store indexing error:', error);
+    console.error('LanceDB indexing error:', error);
     setStoreStatus(`Indexing failed: ${error.message}`, true);
   }
 }
@@ -301,16 +360,16 @@ async function queryLocalStore() {
     return;
   }
 
-  setStoreStatus('Running local similarity search...');
+  setStoreStatus('Running LanceDB vector similarity search...');
 
   try {
     const [queryEmbedding] = await embedTexts([queryText]);
     const rows = await queryIndexedDocuments(queryEmbedding, 5);
 
     renderChromaResults(rows);
-    setStoreStatus(`Search completed. Returned ${rows.length} result(s) from the browser store.`);
+    setStoreStatus(`Search completed. Returned ${rows.length} result(s) from LanceDB.`);
   } catch (error) {
-    console.error('Store query error:', error);
+    console.error('LanceDB query error:', error);
     renderChromaResults([]);
     setStoreStatus(`Search failed: ${error.message}`, true);
   }
@@ -320,25 +379,35 @@ async function clearLocalStore() {
   try {
     await clearIndexedDocuments();
     renderChromaResults([]);
-    setStoreStatus('Browser vector store cleared.');
+    setStoreStatus('LanceDB vector store cleared.');
   } catch (error) {
-    console.error('Store clear error:', error);
+    console.error('LanceDB clear error:', error);
     setStoreStatus(`Clear failed: ${error.message}`, true);
   }
 }
 
-function regenerateDocuments() {
-  const documents = createTestDocuments();
-  renderDocuments(documents);
+async function regenerateDocuments() {
+  const documents = await createTestDocuments();
+  await renderDocuments(documents);
   renderChromaResults([]);
 }
 
-generateButton.addEventListener('click', regenerateDocuments);
-addDocumentButton.addEventListener('click', addCustomDocument);
+generateButton.addEventListener('click', () => regenerateDocuments().catch(err => console.error('Generate error:', err)));
+addDocumentButton.addEventListener('click', () => addCustomDocument().catch(err => console.error('Add document error:', err)));
 storeInitButton.addEventListener('click', initializeStore);
 storeIndexButton.addEventListener('click', indexDocumentsToStore);
 storeQueryButton.addEventListener('click', queryLocalStore);
-storeClearButton.addEventListener('click', clearLocalStore);
-regenerateDocuments();
-renderChromaResults([]);
-initializeStore();
+storeClearButton.addEventListener('click', () => clearLocalStore().catch(err => console.error('Clear error:', err)));
+
+// Initialize on page load
+(async () => {
+  try {
+    await initEnvironment();
+    await regenerateDocuments();
+    renderChromaResults([]);
+    await initializeStore();
+  } catch (error) {
+    console.error('Page initialization error:', error);
+    setStoreStatus(`Initialization failed: ${error.message}`, true);
+  }
+})();
