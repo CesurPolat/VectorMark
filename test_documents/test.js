@@ -4,8 +4,8 @@ import {
   queryIndexedDocuments,
   upsertIndexedDocuments
 } from './browserVectorStore.js';
-import { env, pipeline } from '../vendor/transformers.js';
-import { isValid, ulid } from '../vendor/ulid.js';
+import { env, pipeline } from '../node_modules/@huggingface/transformers/dist/transformers.min.js';
+import { isValid, ulid } from '../node_modules/ulid/dist/index.js';
 
 const DEFAULT_DOCUMENT_COUNT = 5;
 const TITLE_VARIANTS = [

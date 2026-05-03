@@ -1,4 +1,4 @@
-import '../vendor/dexie.js';
+import '../node_modules/dexie/dist/dexie.min.js';
 
 const db = new Dexie('VectorMarkBrowserVectorDemo');
 

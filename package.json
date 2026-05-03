@@ -1,0 +1,29 @@
+{
+  "name": "vectormark",
+  "version": "0.1.0",
+  "description": "VectorMark — Smart bookmark manager that automatically categorizes and organizes your saved websites.",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CesurPolat/VectorMark.git"
+  },
+  "keywords": [
+    "bookmark",
+    "manager",
+    "organization"
+  ],
+  "author": "Cesur Polat",
+  "license": "MIT",
+  "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.2.0",
+    "@huggingface/transformers": "^4.2.0",
+    "@lancedb/lancedb": "^0.27.2",
+    "bulma": "^1.0.4",
+    "dexie": "^4.4.2",
+    "jquery": "^4.0.0",
+    "ulid": "^3.0.2"
+  }
+}
