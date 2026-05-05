@@ -20,10 +20,10 @@
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.2.0",
     "@huggingface/transformers": "^4.2.0",
-    "@lancedb/lancedb": "^0.27.2",
     "bulma": "^1.0.4",
     "dexie": "^4.4.2",
     "jquery": "^4.0.0",
-    "ulid": "^3.0.2"
+    "ulid": "^3.0.2",
+    "veclite": "^0.3.0"
   }
 }

@@ -1,358 +1,438 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VectorMark ULID Test Documents</title>
-  <link rel="stylesheet" href="../node_modules/bulma/css/bulma.min.css" />
-  <style>
-    :root {
-      color-scheme: light;
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at top, rgba(68, 123, 255, 0.18), transparent 34%),
-        linear-gradient(180deg, #f8fbff 0%, #eef2f9 100%);
-      color: #172033;
-    }
-
-    .test-shell {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 32px 20px 48px;
-    }
-
-    .hero-card {
-      border-radius: 24px;
-      padding: 28px;
-      background: rgba(255, 255, 255, 0.9);
-      box-shadow: 0 24px 60px rgba(25, 42, 89, 0.12);
-      backdrop-filter: blur(10px);
-    }
-
-    .hero-card h1 {
-      margin-bottom: 12px;
-    }
-
-    .hero-card p {
-      max-width: 760px;
-    }
-
-    .meta-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 18px;
-    }
-
-    .meta-pill {
-      border-radius: 999px;
-      padding: 8px 14px;
-      background: #edf3ff;
-      color: #24438f;
-      font-size: 0.9rem;
-      font-weight: 600;
-    }
-
-    .panel-grid {
-      display: grid;
-      grid-template-columns: 1.15fr 0.85fr;
-      gap: 22px;
-      margin-top: 24px;
-    }
-
-    .panel-card {
-      border-radius: 22px;
-      padding: 22px;
-      background: rgba(255, 255, 255, 0.92);
-      box-shadow: 0 18px 45px rgba(26, 39, 72, 0.08);
-    }
-
-    .document-list {
-      display: grid;
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .document-card {
-      border: 1px solid #dde7fb;
-      border-radius: 18px;
-      padding: 18px;
-      background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
-    }
-
-    .document-head {
-      display: flex;
-      gap: 12px;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 10px;
-    }
-
-    .document-id {
-      font-family: "Courier New", monospace;
-      font-size: 0.82rem;
-      color: #31529e;
-      word-break: break-all;
-    }
-
-    .tag-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 14px;
-    }
-
-    .tag {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 6px 10px;
-      background: #eef4ff;
-      color: #2a498f;
-      font-size: 0.78rem;
-      font-weight: 700;
-      text-transform: lowercase;
-    }
-
-    .json-preview {
-      min-height: 540px;
-      max-height: 70vh;
-      overflow: auto;
-      margin-top: 18px;
-      padding: 16px;
-      border-radius: 16px;
-      background: #10192c;
-      color: #d7e6ff;
-      font-family: "Courier New", monospace;
-      font-size: 0.82rem;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .status-box {
-      margin-top: 16px;
-      padding: 14px 16px;
-      border-radius: 14px;
-      background: #f4f7fd;
-      color: #21314f;
-      font-size: 0.92rem;
-      line-height: 1.45;
-    }
-
-    .form-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .form-grid .full-span {
-      grid-column: 1 / -1;
-    }
-
-    .result-list {
-      display: grid;
-      gap: 12px;
-      margin-top: 18px;
-    }
-
-    .result-card {
-      border: 1px solid #dde7fb;
-      border-radius: 16px;
-      padding: 16px;
-      background: #fbfcff;
-    }
-
-    .composer-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .composer-grid .full-span {
-      grid-column: 1 / -1;
-    }
-
-    @media (max-width: 900px) {
-      .panel-grid {
-        grid-template-columns: 1fr;
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VectorMark Notes Demo</title>
+    <link rel="stylesheet" href="../node_modules/bulma/css/bulma.min.css" />
+    <style>
+      :root {
+        --vm-ink: #132028;
+        --vm-surface: #f7f4eb;
+        --vm-card: #fffdf7;
+        --vm-border: #d8d1c1;
+        --vm-accent: #136f63;
+        --vm-accent-soft: #daf0eb;
+        --vm-gold: #b78324;
       }
 
-      .json-preview {
-        min-height: 320px;
+      body {
+        min-height: 100vh;
+        margin: 0;
+        color: var(--vm-ink);
+        background:
+          radial-gradient(circle at top left, rgba(183, 131, 36, 0.16), transparent 30%),
+          linear-gradient(160deg, #f7f4eb 0%, #eef4f1 52%, #f8f1e2 100%);
       }
 
-      .form-grid {
-        grid-template-columns: 1fr;
+      .demo-shell {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 28px 20px 40px;
       }
 
-      .composer-grid {
-        grid-template-columns: 1fr;
+      .hero-card,
+      .panel-card {
+        background: rgba(255, 253, 247, 0.9);
+        border: 1px solid rgba(19, 32, 40, 0.08);
+        border-radius: 22px;
+        box-shadow: 0 18px 40px rgba(19, 32, 40, 0.08);
+        backdrop-filter: blur(8px);
       }
-    }
-  </style>
-</head>
-<body>
-  <main class="test-shell">
-    <section class="hero-card">
-      <h1 class="title is-3">ULID Test Document Area</h1>
-      <p class="subtitle is-6 mb-4">
-        This demo page generates test document objects with ULID-based identifiers from `vendor/ulid.js`.
-        The generated records are shown both as cards and as formatted JSON.
-      </p>
-      <div class="buttons mb-0">
-        <button id="generate-documents-btn" class="button is-link is-medium" type="button">Generate Documents</button>
-      </div>
-      <div class="meta-row">
-        <div class="meta-pill">Count: <span id="document-count">0</span></div>
-        <div class="meta-pill">ULID valid: <span id="ulid-validity">Waiting</span></div>
-        <div class="meta-pill">Unique IDs: <span id="ulid-uniqueness">Waiting</span></div>
-        <div class="meta-pill" style="background: #f0f5ff; color: #1e40af;">Vector DB: <strong>LanceDB</strong></div>
-      </div>
-    </section>
 
-    <section class="panel-grid">
-      <article class="panel-card">
-        <h2 class="title is-5 mb-2">Generated Documents</h2>
-        <p class="subtitle is-7 mb-0">Readable test cards with ULID IDs and lightweight metadata.</p>
-        <div class="composer-grid">
-          <div>
-            <label class="label" for="custom-title">Title</label>
-            <input id="custom-title" class="input" type="text" placeholder="Custom document title" />
-          </div>
-          <div>
-            <label class="label" for="custom-status">Status</label>
-            <div class="select is-fullwidth">
-              <select id="custom-status">
-                <option value="draft">draft</option>
-                <option value="ready">ready</option>
-                <option value="review">review</option>
-                <option value="archived">archived</option>
-              </select>
+      .hero-card {
+        margin-bottom: 20px;
+        padding: 24px;
+      }
+
+      .hero-card h1 {
+        margin-bottom: 8px;
+      }
+
+      .hero-card p {
+        max-width: 760px;
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .status-badge {
+        border-radius: 999px;
+        background: var(--vm-accent-soft);
+        color: var(--vm-accent);
+        padding: 8px 12px;
+        font-size: 0.92rem;
+        font-weight: 600;
+      }
+
+      .layout-grid {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
+      }
+
+      .panel-card {
+        padding: 20px;
+      }
+
+      .panel-card h2 {
+        margin-bottom: 8px;
+      }
+
+      .panel-card .subtitle {
+        color: rgba(19, 32, 40, 0.72);
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .actions-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .stats-grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-bottom: 18px;
+      }
+
+      .stat-card {
+        background: rgba(19, 111, 99, 0.08);
+        border: 1px solid rgba(19, 111, 99, 0.12);
+        border-radius: 16px;
+        padding: 14px;
+      }
+
+      .stat-card span {
+        display: block;
+        font-size: 0.84rem;
+        color: rgba(19, 32, 40, 0.66);
+      }
+
+      .stat-card strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 1.4rem;
+      }
+
+      .note-list,
+      .results-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .note-card,
+      .result-card {
+        background: var(--vm-card);
+        border: 1px solid var(--vm-border);
+        border-radius: 18px;
+        padding: 16px;
+      }
+
+      .note-card.is-selected {
+        border-color: var(--vm-accent);
+        box-shadow: 0 0 0 3px rgba(19, 111, 99, 0.12);
+      }
+
+      .note-card__top,
+      .result-card__top,
+      .toolbar-line {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .note-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .note-meta,
+      .ulid-note,
+      .helper-text {
+        color: rgba(19, 32, 40, 0.66);
+        font-size: 0.88rem;
+      }
+
+      .note-body {
+        margin: 12px 0;
+        white-space: pre-wrap;
+      }
+
+      .note-tags {
+        color: var(--vm-accent);
+        font-size: 0.92rem;
+        font-weight: 600;
+      }
+
+      .note-footer {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 10px;
+        font-size: 0.88rem;
+      }
+
+      .score-pill {
+        border-radius: 999px;
+        background: rgba(183, 131, 36, 0.14);
+        color: #8c641b;
+        font-size: 0.84rem;
+        font-weight: 700;
+        padding: 6px 10px;
+        white-space: nowrap;
+      }
+
+      .empty-state {
+        border: 1px dashed rgba(19, 32, 40, 0.18);
+        border-radius: 16px;
+        padding: 20px;
+        color: rgba(19, 32, 40, 0.62);
+        background: rgba(255, 255, 255, 0.55);
+      }
+
+      .status-line {
+        margin-top: 12px;
+      }
+
+      .error-line {
+        margin-top: 6px;
+        color: #a32727;
+        min-height: 1.4em;
+      }
+
+      @media (max-width: 960px) {
+        .layout-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .stats-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="demo-shell">
+      <section class="hero-card">
+        <p class="is-uppercase has-text-weight-semibold helper-text">VectorMark Demo</p>
+        <h1 class="title is-3">VecLite + ULID Notes Playground</h1>
+        <p class="subtitle is-6">
+          Not ekle, ULID ile sirala, local embedding ile semantic arama yap ve metadata filtrelerini
+          ayni ekranda dene. Demo sadece ayrik test verisi kullanir.
+        </p>
+        <div class="badge-row">
+          <span class="status-badge" id="model-status">Model loading</span>
+          <span class="status-badge">ULID IDs</span>
+          <span class="status-badge">IndexedDB persistence</span>
+          <span class="status-badge">all-MiniLM-L6-v2 embeddings</span>
+        </div>
+        <p class="status-line" id="status-message">Hazirlaniyor...</p>
+        <p class="error-line" id="error-message"></p>
+      </section>
+
+      <section class="layout-grid">
+        <div class="stack">
+          <section class="panel-card">
+            <div class="toolbar-line">
+              <div>
+                <h2 class="title is-5">Not Editor</h2>
+                <p class="subtitle is-6" id="selected-note-label">New note</p>
+              </div>
             </div>
-          </div>
-          <div class="full-span">
-            <label class="label" for="custom-content">Content</label>
-            <textarea id="custom-content" class="textarea" rows="4" placeholder="Add custom text to improve search results"></textarea>
-          </div>
-          <div class="full-span">
-            <label class="label" for="custom-tags">Tags</label>
-            <input id="custom-tags" class="input" type="text" placeholder="search, bookmarks, ranking" />
-          </div>
-        </div>
-        <div class="buttons mt-4 mb-2">
-          <button id="add-document-btn" class="button is-success is-light" type="button">Add Document</button>
-        </div>
-        <div id="document-list" class="document-list"></div>
-      </article>
 
-      <article class="panel-card">
-        <h2 class="title is-5 mb-2">JSON Preview</h2>
-        <p class="subtitle is-7 mb-0">The same document payload rendered as formatted JSON.</p>
-        <pre id="json-preview" class="json-preview"></pre>
-      </article>
-    </section>
+            <form id="note-form" class="stack">
+              <input id="note-id" type="hidden" />
 
-    <section class="panel-grid">
-      <article class="panel-card">
-        <h2 class="title is-5 mb-2">LanceDB Vector Store</h2>
-        <p class="subtitle is-7 mb-0">LanceDB provides advanced vector search with SQL filtering, metadata indexing, and optimized similarity search in the browser.</p>
+              <div class="field">
+                <label class="label" for="note-title">Title</label>
+                <div class="control">
+                  <input id="note-title" class="input" type="text" maxlength="120" placeholder="Ornek: Semantic search fikirleri" />
+                </div>
+              </div>
 
-        <div class="form-grid">
-          <div class="full-span">
-            <label class="label" for="store-name">Store Configuration</label>
-            <input id="store-name" class="input" type="text" value="Database: VectorMarkLanceTest | Table: testDocuments" disabled />
-          </div>
-          <div class="full-span">
-            <label class="label" for="vector-query">Query Text</label>
-            <textarea id="vector-query" class="textarea" rows="3">bookmark organization and search ranking</textarea>
-          </div>
-        </div>
+              <div class="field">
+                <label class="label" for="note-content">Content</label>
+                <div class="control">
+                  <textarea id="note-content" class="textarea" rows="6" placeholder="Notun ana metni"></textarea>
+                </div>
+              </div>
 
-        <div class="buttons mt-4 mb-0">
-          <button id="store-init-btn" class="button is-info is-light" type="button">Initialize Store</button>
-          <button id="store-index-btn" class="button is-primary" type="button">Index Documents</button>
-          <button id="store-query-btn" class="button is-link is-light" type="button">Run Search</button>
-          <button id="store-clear-btn" class="button is-danger is-light" type="button">Clear Store</button>
-        </div>
+              <div class="field">
+                <label class="label" for="note-tags">Tags</label>
+                <div class="control">
+                  <input id="note-tags" class="input" type="text" placeholder="vector, ulid, demo" />
+                </div>
+                <p class="helper-text">Virgulle ayir. Tag filtreleri UI tarafinda uygulanir.</p>
+              </div>
 
-        <div id="store-status" class="status-box">Store status: idle</div>
-      </article>
+              <div class="columns is-mobile is-multiline">
+                <div class="column is-12-mobile is-4-tablet">
+                  <label class="label" for="note-category">Category</label>
+                  <div class="select is-fullwidth">
+                    <select id="note-category">
+                      <option value="work">work</option>
+                      <option value="ideas">ideas</option>
+                      <option value="research">research</option>
+                      <option value="personal">personal</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="column is-12-mobile is-4-tablet">
+                  <label class="label" for="note-status">Status</label>
+                  <div class="select is-fullwidth">
+                    <select id="note-status">
+                      <option value="draft">draft</option>
+                      <option value="active">active</option>
+                      <option value="archived">archived</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="column is-12-mobile is-4-tablet">
+                  <label class="label" for="note-pinned">Pinned</label>
+                  <div class="select is-fullwidth">
+                    <select id="note-pinned">
+                      <option value="false">false</option>
+                      <option value="true">true</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
 
-      <article class="panel-card">
-        <h2 class="title is-5 mb-2">Search Results</h2>
-        <p class="subtitle is-7 mb-0">Nearest matches returned from the local browser vector store.</p>
-        <div id="store-results" class="result-list"></div>
-      </article>
-    </section>
+              <div class="actions-row">
+                <button id="save-note-btn" class="button is-primary" type="submit">Save note</button>
+                <button id="reset-form-btn" class="button is-light" type="button">Reset form</button>
+              </div>
+            </form>
+          </section>
 
-    <section class="panel-grid">
-      <article class="panel-card">
-        <h2 class="title is-5 mb-2">Advanced Features & Testing</h2>
-        <p class="subtitle is-7 mb-0">LanceDB test suite and advanced query capabilities.</p>
-        
-        <div style="margin-top: 16px; padding: 14px; background: #f9fafb; border-radius: 12px;">
-          <h3 class="title is-6 mb-2">Run Test Suite</h3>
-          <p style="font-size: 0.9rem; margin-bottom: 12px;">Execute comprehensive LanceDB integration tests in the browser console:</p>
-          <code style="display: block; background: #f0f0f0; padding: 8px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 12px;">
-            window.runLanceDBTests()
-          </code>
-          <p style="font-size: 0.85rem; color: #666;">Tests include: initialization, document insertion, vector search, metadata filtering, and store cleanup.</p>
-        </div>
-
-        <div style="margin-top: 16px; padding: 14px; background: #f9fafb; border-radius: 12px;">
-          <h3 class="title is-6 mb-2">Import Test Runner</h3>
-          <p style="font-size: 0.9rem; margin-bottom: 12px;">For manual testing, import the test runner module in browser console:</p>
-          <code style="display: block; background: #f0f0f0; padding: 8px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 12px;">
-            import { runLanceDBTests } from './test_documents/lancedbTestRunner.js'
-          </code>
-          <p style="font-size: 0.85rem; color: #666;">Then call: <code>runLanceDBTests()</code></p>
-        </div>
-
-        <div style="margin-top: 16px; padding: 14px; background: #eef2ff; border-radius: 12px; border-left: 4px solid #1e40af;">
-          <h3 class="title is-6 mb-2" style="color: #1e40af;">About LanceDB</h3>
-          <ul style="font-size: 0.9rem; margin-left: 16px; color: #333;">
-            <li>✓ Advanced vector similarity search with configurable distance metrics</li>
-            <li>✓ SQL WHERE clauses for metadata filtering (status, date range, tags)</li>
-            <li>✓ WASM-based execution in browser environment (Extension-compatible)</li>
-            <li>✓ IndexedDB or OPFS backend (auto-detected for maximum compatibility)</li>
-            <li>✓ 384-dimensional embeddings from all-MiniLM-L6-v2 model</li>
-          </ul>
-        </div>
-      </article>
-
-      <article class="panel-card">
-        <h2 class="title is-5 mb-2">Documentation</h2>
-        <p class="subtitle is-7 mb-0">Technical references and implementation details.</p>
-        
-        <div style="margin-top: 12px;">
-          <h3 class="title is-6 mb-2">Files</h3>
-          <ul style="font-size: 0.9rem; margin-left: 16px; color: #333;">
-            <li><code>lancedbConfig.js</code> — Environment detection and WASM path configuration</li>
-            <li><code>lancedbVectorStore.js</code> — Core LanceDB vector store API</li>
-            <li><code>lancedbTestRunner.js</code> — Comprehensive test suite for all features</li>
-            <li><code>test.js</code> — UI integration with LanceDB backend</li>
-            <li><code>browserVectorStore.js</code> — Legacy Dexie-based store (reference)</li>
-          </ul>
+          <section class="panel-card">
+            <h2 class="title is-5">Storage Controls</h2>
+            <p class="subtitle is-6">Vector index ayrik IndexedDB alaninda saklanir.</p>
+            <div class="actions-row">
+              <button id="seed-demo-btn" class="button is-link is-light" type="button">Load seed data</button>
+              <button id="save-db-btn" class="button is-success is-light" type="button">Save</button>
+              <button id="load-db-btn" class="button is-info is-light" type="button">Load</button>
+              <button id="clear-memory-btn" class="button is-warning is-light" type="button">Clear memory</button>
+              <button id="reset-all-btn" class="button is-danger is-light" type="button">Full reset</button>
+            </div>
+          </section>
         </div>
 
-        <div style="margin-top: 14px; padding: 12px; background: #f0fdf4; border-radius: 10px;">
-          <h3 class="title is-6 mb-2" style="color: #166534;">Implementation Notes</h3>
-          <p style="font-size: 0.85rem; color: #333;">
-            LanceDB replaces Dexie as the vector store backend in test_documents. All production bookmark data remains on Dexie. 
-            The test database is isolated and does not affect the main VectorMark application.
-          </p>
-        </div>
-      </article>
-    </section>
-  </main>
+        <div class="stack">
+          <section class="panel-card">
+            <div class="stats-grid">
+              <div class="stat-card">
+                <span>Indexed vectors</span>
+                <strong id="db-size">0</strong>
+              </div>
+              <div class="stat-card">
+                <span>Notes in state</span>
+                <strong id="note-count">0</strong>
+              </div>
+              <div class="stat-card">
+                <span>Search results</span>
+                <strong id="search-count">0</strong>
+              </div>
+            </div>
 
-  <script type="module" src="./test-init.js"></script>
-</body>
+            <div class="toolbar-line">
+              <div>
+                <h2 class="title is-5">Semantic Search</h2>
+                <p class="subtitle is-6">Query embedding, metadata filtreleri ve tag post-filter bir arada.</p>
+              </div>
+            </div>
+
+            <div class="stack">
+              <div class="field">
+                <label class="label" for="search-query">Query</label>
+                <div class="control">
+                  <input id="search-query" class="input" type="search" placeholder="Ornek: browser icinde hizli vector arama" />
+                </div>
+              </div>
+
+              <div class="columns is-mobile is-multiline">
+                <div class="column is-12-mobile is-3-tablet">
+                  <label class="label" for="filter-category">Category</label>
+                  <div class="select is-fullwidth">
+                    <select id="filter-category">
+                      <option value="">all</option>
+                      <option value="work">work</option>
+                      <option value="ideas">ideas</option>
+                      <option value="research">research</option>
+                      <option value="personal">personal</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="column is-12-mobile is-3-tablet">
+                  <label class="label" for="filter-status">Status</label>
+                  <div class="select is-fullwidth">
+                    <select id="filter-status">
+                      <option value="">all</option>
+                      <option value="draft">draft</option>
+                      <option value="active">active</option>
+                      <option value="archived">archived</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="column is-12-mobile is-3-tablet">
+                  <label class="label" for="filter-pinned">Pinned</label>
+                  <div class="select is-fullwidth">
+                    <select id="filter-pinned">
+                      <option value="">all</option>
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="column is-12-mobile is-3-tablet">
+                  <label class="label" for="filter-created-after">Created after</label>
+                  <div class="control">
+                    <input id="filter-created-after" class="input" type="date" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="field">
+                <label class="label" for="filter-tags">Tag filter</label>
+                <div class="control">
+                  <input id="filter-tags" class="input" type="text" placeholder="Ornek: vector, wasm" />
+                </div>
+              </div>
+
+              <div class="actions-row">
+                <button id="run-search-btn" class="button is-primary" type="button">Run search</button>
+                <button id="clear-search-btn" class="button is-light" type="button">Clear search</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-card">
+            <h2 class="title is-5">Notes</h2>
+            <div id="note-list" class="note-list"></div>
+          </section>
+
+          <section class="panel-card">
+            <h2 class="title is-5">Search Results</h2>
+            <div id="search-results" class="results-list"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="test.js"></script>
+  </body>
 </html>

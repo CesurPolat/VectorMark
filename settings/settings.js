@@ -41,6 +41,7 @@ let $closePageBtn;
 let $dbExportBtn;
 let $dbImportBtn;
 let $dbImportInput;
+let $openLanceDbDemoBtn;
 let $bookmarkImportChromeBtn;
 let $bookmarkImportJsonBtn;
 let $bookmarkImportHtmlBtn;
@@ -64,6 +65,7 @@ function cacheDom() {
   $dbExportBtn = $('#db-export-btn');
   $dbImportBtn = $('#db-import-btn');
   $dbImportInput = $('#db-import-input');
+  $openLanceDbDemoBtn = $('#open-lancedb-demo-btn');
   $bookmarkImportChromeBtn = $('#bookmark-import-chrome-btn');
   $bookmarkImportJsonBtn = $('#bookmark-import-json-btn');
   $bookmarkImportHtmlBtn = $('#bookmark-import-html-btn');
@@ -132,6 +134,7 @@ function bindEvents() {
   $dbExportBtn.on('click', handleDbExport);
   $dbImportBtn.on('click', () => $dbImportInput.trigger('click'));
   $dbImportInput.on('change', handleDbImportChange);
+  $openLanceDbDemoBtn.on('click', openLanceDbDemo);
 
   $bookmarkImportChromeBtn.on('click', handleChromeBookmarkImport);
   $bookmarkImportJsonBtn.on('click', () => $bookmarkJsonInput.trigger('click'));
@@ -207,6 +210,26 @@ function setSettingsBusy(isBusy) {
   $openNewTabToggle.prop('disabled', isBusy);
   $pageSizeSelect.prop('disabled', isBusy);
   $iconStorageModeSelect.prop('disabled', isBusy);
+  $openLanceDbDemoBtn.prop('disabled', isBusy);
+}
+
+function openLanceDbDemo() {
+  const demoPath = 'test_documents/test.html';
+  const demoUrl = typeof chrome !== 'undefined' && chrome?.runtime?.getURL
+    ? chrome.runtime.getURL(demoPath)
+    : new URL(`../${demoPath}`, window.location.href).href;
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.tabs?.create) {
+      chrome.tabs.create({ url: demoUrl });
+    } else {
+      window.open(demoUrl, '_blank', 'noopener');
+    }
+    setStatus('Opening VecLite demo...', false);
+  } catch (error) {
+    console.error('Failed to open VecLite demo:', error);
+    setStatus('Failed to open VecLite demo.', true);
+  }
 }
 
 async function handleDbExport() {
