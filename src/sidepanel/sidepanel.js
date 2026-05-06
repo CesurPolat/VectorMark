@@ -16,12 +16,12 @@ import {
   recordBookmarkClick,
   moveBookmarkInCustomOrder,
   moveFolderInCustomOrder,
-  exportDatabase,
-  importDatabaseReplace,
   saveOrUpdateBookmarkByUrl,
-  resolveBookmarkIconPayload,
-  normalizeLegacyIconsToBase64
+  resolveBookmarkIconPayload
 } from '../services/dbService';
+
+import {exportDatabase, importDatabaseReplace, normalizeLegacyIconsToBase64} from '../services/dbMaintenanceService';
+
 import {
   getSettings,
   updateSettings,

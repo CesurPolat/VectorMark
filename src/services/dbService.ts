@@ -1,34 +1,13 @@
 import { db } from './dbCore';
 import { ulid } from 'ulid';
 import {
-  normalizeIconData,
-  normalizeIconPayload,
-  normalizeIconHash,
   normalizeIconInput,
-  isDataUri,
-  isHttpUrl,
-  isGoogleFaviconUrl,
-  ensureIconHash,
-  fetchUrlAsIconPayload,
   resolveBookmarkIconPayload,
   resolveBookmarkIconData
 } from './iconService';
 import type {
-  BookmarkImportItem,
-  BookmarkQueryOptions,
   BookmarkRecord,
-  BookmarkSortBy,
-  BookmarkWithIcon,
-  DatabaseExportPayload,
-  FolderQueryOptions,
-  FolderRecord,
-  FolderSortBy,
-  IconPayload,
-  IconRow,
-  NormalizeIconsProgress,
-  NormalizeIconsSummary,
-  SaveOrUpdateBookmarkResult,
-  SortDirection
+  QueryOptions
 } from '../types';
 
 type EntityId = string;
@@ -65,11 +44,7 @@ async function getOrCreateIconId(iconInput) {
   return iconId;
 }
 
-async function deleteIconIfUnused(iconId) {
-  if (!isNonEmptyId(iconId)) {
-    return false;
-  }
-
+async function deleteIconIfUnused(iconId: string) {
   const usageCount = await db.bookmarks.where('iconId').equals(iconId).count();
 
   if (usageCount > 0) {
@@ -81,13 +56,6 @@ async function deleteIconIfUnused(iconId) {
 }
 
 export { resolveBookmarkIconPayload, resolveBookmarkIconData };
-
-const BOOKMARK_SORT_FIELDS = new Set(['customOrder', 'updatedAt', 'createdAt', 'lastClickedAt', 'title', 'id']);
-const FOLDER_SORT_FIELDS = new Set(['customOrder', 'updatedAt', 'createdAt', 'name', 'bookmarkCount', 'id']);
-
-function getNowTimestamp() {
-  return Date.now();
-}
 
 function normalizeTimestamp(value, fallback) {
   const parsed = Number(value);
@@ -128,57 +96,29 @@ function normalizeBookmarkFolderId(folderId) {
   return normalized || null;
 }
 
-function normalizeEntityId(value) {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  const normalized = String(value).trim();
-  return normalized || null;
-}
-
-function isNonEmptyId(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 function normalizeSortDirection(direction, fallback = 'desc') {
   return direction === 'asc' || direction === 'desc' ? direction : fallback;
 }
 
-function normalizeBookmarkSortBy(sortBy, fallback = 'updatedAt') {
-  if (sortBy === 'manual') {
-    return 'customOrder';
-  }
-
-  return BOOKMARK_SORT_FIELDS.has(sortBy) ? sortBy : fallback;
-}
-
-function normalizeFolderSortBy(sortBy, fallback = 'name') {
-  if (sortBy === 'manual') {
-    return 'customOrder';
-  }
-
-  return FOLDER_SORT_FIELDS.has(sortBy) ? sortBy : fallback;
-}
-
-function getBookmarkSortOptions(options: BookmarkQueryOptions = {}) {
-  const sortBy = normalizeBookmarkSortBy(String(options?.sortBy ?? '').trim() || 'updatedAt');
-  const fallbackDirection = sortBy === 'title' || sortBy === 'customOrder' ? 'asc' : 'desc';
+function getSortOptions(options: QueryOptions, fallbackSortBy, ascSortFields) {
+  const rawSortBy = String(options?.sortBy ?? '').trim() || fallbackSortBy;
+  const normalizedSortBy = rawSortBy === 'manual'
+    ? 'customOrder'
+    : rawSortBy;
+  const fallbackDirection = ascSortFields.has(normalizedSortBy) ? 'asc' : 'desc';
 
   return {
-    sortBy,
+    sortBy: normalizedSortBy,
     sortDir: normalizeSortDirection(options?.sortDir, fallbackDirection)
   };
 }
 
-function getFolderSortOptions(options: FolderQueryOptions = {}) {
-  const sortBy = normalizeFolderSortBy(String(options?.sortBy ?? '').trim() || 'name');
-  const fallbackDirection = sortBy === 'name' || sortBy === 'customOrder' ? 'asc' : 'desc';
+function getBookmarkSortOptions(options: QueryOptions = {}) {
+  return getSortOptions(options, 'updatedAt', new Set(['title', 'customOrder']));
+}
 
-  return {
-    sortBy,
-    sortDir: normalizeSortDirection(options?.sortDir, fallbackDirection)
-  };
+function getFolderSortOptions(options: QueryOptions = {}) {
+  return getSortOptions(options, 'name', new Set(['name', 'customOrder']));
 }
 
 function compareValues(left, right, direction = 'asc') {
@@ -251,8 +191,7 @@ async function getNextBookmarkCustomOrder(folderId = null) {
 }
 
 async function getNextFolderCustomOrder(parentId = null) {
-  const normalizedParentId = normalizeParentId(parentId);
-  const scopedFolders = await getFoldersByParentId(normalizedParentId);
+  const scopedFolders = await getFoldersByParentId(parentId);
 
   const maxOrder = scopedFolders.reduce((max, folder) => {
     return Math.max(max, normalizeCustomOrder(folder?.customOrder, 0));
@@ -262,23 +201,21 @@ async function getNextFolderCustomOrder(parentId = null) {
 }
 
 async function getFoldersByParentId(parentId = null) {
-  const normalizedParentId = normalizeParentId(parentId);
-
-  if (normalizedParentId === null) {
+  if (parentId === null) {
     return await db.folders
       .toCollection()
       .filter((folder) => folder.parentId === null || folder.parentId === undefined)
       .toArray();
   }
 
-  return await db.folders.where('parentId').equals(normalizedParentId).toArray();
+  return await db.folders.where('parentId').equals(parentId).toArray();
 }
 
 // Add a bookmark with a new icon
 export async function addBookmarkWithIcon(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.icons, db.bookmarks, async () => {
-      const now = getNowTimestamp();
+      const now = Date.now();
       const normalizedFolderId = normalizeBookmarkFolderId(folderId);
       const iconId = await getOrCreateIconId(data);
       const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
@@ -329,8 +266,8 @@ export async function updateBookmark(bookmarkId, updates) {
         }
       }
 
-      nextBookmark.createdAt = normalizeTimestamp(nextBookmark.createdAt, getNowTimestamp());
-      nextBookmark.updatedAt = getNowTimestamp();
+      nextBookmark.createdAt = normalizeTimestamp(nextBookmark.createdAt, Date.now());
+      nextBookmark.updatedAt = Date.now();
       nextBookmark.lastClickedAt = normalizeNullableTimestamp(nextBookmark.lastClickedAt);
       nextBookmark.customOrder = normalizeCustomOrder(nextBookmark.customOrder, 0);
 
@@ -436,7 +373,7 @@ function toSafePageSize(value, fallback = 40) {
   return Math.min(250, Math.max(1, parsed));
 }
 
-function toQueryOptions(options: BookmarkQueryOptions = {}): BookmarkQueryOptions {
+function toQueryOptions(options: QueryOptions = {}): QueryOptions {
   return {
     rootOnly: options?.rootOnly === true,
     sortBy: options?.sortBy,
@@ -448,25 +385,9 @@ function isRootBookmark(bookmark) {
   return bookmark?.folderId === null || bookmark?.folderId === undefined;
 }
 
-function normalizeBookmarkRecord(record: Partial<BookmarkRecord> = {}): BookmarkRecord {
-  const now = getNowTimestamp();
-  const createdAt = normalizeTimestamp(record.createdAt, now);
-  const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
 
-  return {
-    id: String(record.id ?? ''),
-    title: String(record.title ?? ''),
-    url: String(record.url ?? ''),
-    folderId: normalizeBookmarkFolderId(record.folderId),
-    iconId: normalizeEntityId(record.iconId),
-    createdAt,
-    updatedAt,
-    lastClickedAt: normalizeNullableTimestamp(record.lastClickedAt),
-    customOrder: normalizeCustomOrder(record.customOrder, 0)
-  };
-}
 
-async function getFolderBookmarkRecords(folderId: string | null = null, options: BookmarkQueryOptions = {}) {
+async function getFolderBookmarkRecords(folderId: string | null = null, options: QueryOptions = {}) {
   const queryOptions = toQueryOptions(options);
 
   if (folderId === null) {
@@ -551,15 +472,13 @@ async function getFolderScopeIds(folderId) {
     return null;
   }
 
-  const rootFolderId = normalizeFolderId(folderId);
-
-  if (rootFolderId === null) {
+  if (folderId === null) {
     return null;
   }
 
   const folders = await db.folders.toArray();
-  const scopedIds = new Set([rootFolderId]);
-  const queue = [rootFolderId];
+  const scopedIds = new Set([folderId]);
+  const queue = [folderId];
 
   while (queue.length > 0) {
     const currentId = queue.shift();
@@ -682,7 +601,7 @@ export async function getBookmarkByUrl(url) {
 export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
   try {
     return await db.transaction('rw', db.bookmarks, db.icons, async () => {
-      const now = getNowTimestamp();
+      const now = Date.now();
       const normalizedIcon = normalizeIconInput(data);
       const normalizedFolderId = normalizeBookmarkFolderId(folderId);
       const bookmark = await db.bookmarks
@@ -736,7 +655,7 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
         updates.customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
       }
 
-      if (isNonEmptyId(iconId)) {
+      if (iconId != null) {
         updates.iconId = iconId;
       }
 
@@ -759,14 +678,12 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
 
 export async function recordBookmarkClick(bookmarkId) {
   try {
-    const parsedBookmarkId = normalizeEntityId(bookmarkId);
-
-    if (!parsedBookmarkId) {
+    if (!bookmarkId) {
       return false;
     }
 
-    const clickedAt = getNowTimestamp();
-    const updatedCount = await db.bookmarks.update(parsedBookmarkId, {
+    const clickedAt = Date.now();
+    const updatedCount = await db.bookmarks.update(bookmarkId, {
       lastClickedAt: clickedAt
     });
 
@@ -778,7 +695,7 @@ export async function recordBookmarkClick(bookmarkId) {
 }
 
 async function applyBookmarkOrder(folderId, orderedIds) {
-  const now = getNowTimestamp();
+  const now = Date.now();
   const normalizedFolderId = normalizeBookmarkFolderId(folderId);
 
   for (let index = 0; index < orderedIds.length; index += 1) {
@@ -792,13 +709,12 @@ async function applyBookmarkOrder(folderId, orderedIds) {
 }
 
 async function applyFolderOrder(parentId, orderedIds) {
-  const now = getNowTimestamp();
-  const normalizedParentId = normalizeParentId(parentId);
+  const now = Date.now();
 
   for (let index = 0; index < orderedIds.length; index += 1) {
     const id = orderedIds[index];
     await db.folders.update(id, {
-      parentId: normalizedParentId,
+      parentId: parentId,
       customOrder: index + 1,
       updatedAt: now
     });
@@ -838,14 +754,13 @@ function reorderByPosition(orderedIds, targetId, position = 'top') {
 
 export async function moveBookmarkInCustomOrder(bookmarkId, position = 'top') {
   try {
-    const parsedBookmarkId = normalizeEntityId(bookmarkId);
 
-    if (!parsedBookmarkId) {
+    if (!bookmarkId) {
       throw new Error('Invalid bookmark id.');
     }
 
     return await db.transaction('rw', db.bookmarks, async () => {
-      const bookmark = await db.bookmarks.get(parsedBookmarkId);
+      const bookmark = await db.bookmarks.get(bookmarkId);
 
       if (!bookmark) {
         throw new Error('Bookmark not found.');
@@ -861,7 +776,7 @@ export async function moveBookmarkInCustomOrder(bookmarkId, position = 'top') {
         sortDir: 'asc'
       }).map((item) => item.id);
 
-      const reorderedIds = reorderByPosition(orderedIds, parsedBookmarkId, position);
+      const reorderedIds = reorderByPosition(orderedIds, bookmarkId, position);
       await applyBookmarkOrder(folderId, reorderedIds);
 
       return true;
@@ -874,24 +789,22 @@ export async function moveBookmarkInCustomOrder(bookmarkId, position = 'top') {
 
 export async function moveFolderInCustomOrder(folderId, position = 'top') {
   try {
-    const parsedFolderId = normalizeFolderId(folderId);
 
     return await db.transaction('rw', db.folders, async () => {
-      const folder = await db.folders.get(parsedFolderId);
+      const folder = await db.folders.get(folderId);
 
       if (!folder) {
         throw new Error('Folder not found.');
       }
 
-      const parentId = normalizeParentId(folder.parentId);
-      const siblings = await getFoldersByParentId(parentId);
+      const siblings = await getFoldersByParentId(folder.parentId);
       const orderedIds = sortFolderRecords(
         siblings.map(normalizeFolderRecord),
         { sortBy: 'customOrder', sortDir: 'asc' }
       ).map((item) => item.id);
 
-      const reorderedIds = reorderByPosition(orderedIds, parsedFolderId, position);
-      await applyFolderOrder(parentId, reorderedIds);
+      const reorderedIds = reorderByPosition(orderedIds, folderId, position);
+      await applyFolderOrder(folder.parentId, reorderedIds);
 
       return true;
     });
@@ -901,11 +814,11 @@ export async function moveFolderInCustomOrder(folderId, position = 'top') {
   }
 }
 
-export async function reorderBookmarksInScope(folderId, orderedBookmarkIds = []) {
+export async function reorderBookmarksInScope(folderId: string | null, orderedBookmarkIds: string[] = []) {
   try {
     const normalizedFolderId = normalizeBookmarkFolderId(folderId);
-    const orderedIds = ensureArray(orderedBookmarkIds, 'orderedBookmarkIds')
-      .map((id) => normalizeEntityId(id))
+    const orderedIds = orderedBookmarkIds
+      .map((id) => id)
       .filter(Boolean);
 
     return await db.transaction('rw', db.bookmarks, async () => {
@@ -928,22 +841,21 @@ export async function reorderBookmarksInScope(folderId, orderedBookmarkIds = [])
   }
 }
 
-export async function reorderFoldersInScope(parentId, orderedFolderIds = []) {
+export async function reorderFoldersInScope(parentId: string | null, orderedFolderIds: string[] = []) {
   try {
-    const normalizedParentId = normalizeParentId(parentId);
-    const orderedIds = ensureArray(orderedFolderIds, 'orderedFolderIds')
-      .map((id) => normalizeEntityId(id))
+    const orderedIds = orderedFolderIds
+      .map((id) => id)
       .filter(Boolean);
 
     return await db.transaction('rw', db.folders, async () => {
-      const siblings = await getFoldersByParentId(normalizedParentId);
+      const siblings = await getFoldersByParentId(parentId);
       const siblingIds = new Set(siblings.map((folder) => folder.id));
       const siblingOrderedIds = orderedIds.filter((id) => siblingIds.has(id));
       const missingIds = siblings
         .map((folder) => folder.id)
         .filter((id) => !siblingOrderedIds.includes(id));
 
-      await applyFolderOrder(normalizedParentId, [...siblingOrderedIds, ...missingIds]);
+      await applyFolderOrder(parentId, [...siblingOrderedIds, ...missingIds]);
       return true;
     });
   } catch (error) {
@@ -968,61 +880,61 @@ export async function listChildFoldersWithSort(parentId = null, sortBy = 'name',
   });
 }
 
-function normalizeFolderName(name) {
-  return String(name ?? '').trim();
+//TODO: Remove both from dbMaintaince and here
+function normalizeBookmarkRecord(record: Partial<BookmarkRecord> = {}): BookmarkRecord {
+  const now = Date.now();
+  const createdAt = normalizeTimestamp(record.createdAt, now);
+  const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
+
+  return {
+    id: String(record.id ?? ''),
+    title: String(record.title ?? ''),
+    url: String(record.url ?? ''),
+    folderId: normalizeBookmarkFolderId(record.folderId),
+    iconId: record.iconId,
+    createdAt,
+    updatedAt,
+    lastClickedAt: normalizeNullableTimestamp(record.lastClickedAt),
+    customOrder: normalizeCustomOrder(record.customOrder, 0)
+  };
 }
 
-function normalizeFolderId(folderId) {
-  return normalizeEntityId(folderId);
-}
-
-function normalizeParentId(parentId) {
-  return normalizeFolderId(parentId);
-}
+// Start: CRUD Folder
 
 function normalizeFolderRecord(folder) {
-  const now = getNowTimestamp();
+  const now = Date.now();
   const createdAt = normalizeTimestamp(folder?.createdAt, now);
 
   return {
     ...folder,
     id: String(folder?.id ?? ''),
-    parentId: normalizeParentId(folder.parentId),
+    parentId: folder.parentId,
     createdAt,
     updatedAt: normalizeTimestamp(folder?.updatedAt, createdAt),
     customOrder: normalizeCustomOrder(folder?.customOrder, 0)
   };
 }
 
-function ensureArray(value, label) {
-  if (!Array.isArray(value)) {
-    throw new Error(`${label} must be an array.`);
-  }
-
-  return value;
-}
-
 export async function createFolder(name, parentId = null) {
   try {
-    const normalizedName = normalizeFolderName(name);
-    const normalizedParentId = normalizeParentId(parentId);
+    const normalizedName = name.trim();
 
     if (!normalizedName) {
       throw new Error('Folder name is required.');
     }
 
     return await db.transaction('rw', db.folders, async () => {
-      const now = getNowTimestamp();
+      const now = Date.now();
 
-      if (normalizedParentId !== null) {
-        const parentFolder = await db.folders.get(normalizedParentId);
+      if (parentId !== null) {
+        const parentFolder = await db.folders.get(parentId);
 
         if (!parentFolder) {
           throw new Error('Parent folder not found.');
         }
       }
 
-      const siblingFoldersSafe = await getFoldersByParentId(normalizedParentId);
+      const siblingFoldersSafe = await getFoldersByParentId(parentId);
 
       const hasDuplicateName = siblingFoldersSafe.some((folder) => {
         return folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
@@ -1032,14 +944,14 @@ export async function createFolder(name, parentId = null) {
         throw new Error('A folder with this name already exists in this location.');
       }
 
-      const customOrder = await getNextFolderCustomOrder(normalizedParentId);
+      const customOrder = await getNextFolderCustomOrder(parentId);
 
       const folderId = ulid();
 
       await db.folders.add({
         id: folderId,
         name: normalizedName,
-        parentId: normalizedParentId,
+        parentId: parentId,
         createdAt: now,
         updatedAt: now,
         customOrder
@@ -1048,7 +960,7 @@ export async function createFolder(name, parentId = null) {
       return {
         id: folderId,
         name: normalizedName,
-        parentId: normalizedParentId,
+        parentId: parentId,
         createdAt: now,
         updatedAt: now,
         customOrder,
@@ -1106,13 +1018,12 @@ export async function listFolders(options = {}) {
 
 export async function getFolderById(folderId) {
   try {
-    const parsedFolderId = normalizeFolderId(folderId);
 
-    if (parsedFolderId === null) {
+    if (folderId === null) {
       return null;
     }
 
-    const folder = await db.folders.get(parsedFolderId);
+    const folder = await db.folders.get(folderId);
     return folder ? normalizeFolderRecord(folder) : null;
   } catch (error) {
     console.error('Error getting folder by id:', error);
@@ -1122,12 +1033,11 @@ export async function getFolderById(folderId) {
 
 export async function listChildFolders(parentId = null, options = {}) {
   try {
-    const normalizedParentId = normalizeParentId(parentId);
     const queryOptions = toQueryOptions(options);
 
     return await db.transaction('r', db.folders, db.bookmarks, async () => {
       const allFolders = await db.folders.toArray();
-      const currentLevelFolders = await getFoldersByParentId(normalizedParentId);
+      const currentLevelFolders = await getFoldersByParentId(parentId);
 
       const withCounts = await Promise.all(
         currentLevelFolders.map(async (folder) => {
@@ -1166,15 +1076,14 @@ export async function listChildFolders(parentId = null, options = {}) {
 
 export async function listFolderAncestors(folderId) {
   try {
-    const parsedFolderId = normalizeFolderId(folderId);
 
-    if (parsedFolderId === null) {
+    if (folderId === null) {
       return [];
     }
 
     return await db.transaction('r', db.folders, async () => {
       const ancestors = [];
-      let current = await db.folders.get(parsedFolderId);
+      let current = await db.folders.get(folderId);
       const visited = new Set();
 
       while (current) {
@@ -1202,15 +1111,14 @@ export async function listFolderAncestors(folderId) {
 
 export async function renameFolder(folderId, newName) {
   try {
-    const parsedFolderId = normalizeFolderId(folderId);
-    const normalizedName = normalizeFolderName(newName);
+    const normalizedName = newName.trim();
 
     if (!normalizedName) {
       throw new Error('Folder name is required.');
     }
 
     return await db.transaction('rw', db.folders, async () => {
-      const current = await db.folders.get(parsedFolderId);
+      const current = await db.folders.get(folderId);
 
       if (!current) {
         throw new Error('Folder not found.');
@@ -1219,19 +1127,19 @@ export async function renameFolder(folderId, newName) {
       const siblingFoldersSafe = await getFoldersByParentId(current.parentId ?? null);
 
       const hasDuplicateName = siblingFoldersSafe.some((folder) => {
-        return folder.id !== parsedFolderId && folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
+        return folder.id !== folderId && folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
       });
 
       if (hasDuplicateName) {
         throw new Error('A folder with this name already exists in this location.');
       }
 
-      await db.folders.update(parsedFolderId, {
+      await db.folders.update(folderId, {
         name: normalizedName,
-        updatedAt: getNowTimestamp()
+        updatedAt: Date.now()
       });
 
-      return parsedFolderId;
+      return folderId;
     });
   } catch (error) {
     console.error('Error renaming folder:', error);
@@ -1241,11 +1149,10 @@ export async function renameFolder(folderId, newName) {
 
 export async function deleteFolder(folderId, deleteRecursively = false) {
   try {
-    const parsedFolderId = normalizeFolderId(folderId);
 
     return await db.transaction('rw', db.folders, db.bookmarks, async () => {
-      const now = getNowTimestamp();
-      const folder = await db.folders.get(parsedFolderId);
+      const now = Date.now();
+      const folder = await db.folders.get(folderId);
 
       if (!folder) {
         return false;
@@ -1253,7 +1160,7 @@ export async function deleteFolder(folderId, deleteRecursively = false) {
 
       const allFolders = await db.folders.toArray();
       const descendants = new Set<string>();
-      const queue: string[] = [parsedFolderId];
+      const queue: string[] = [folderId];
 
       while (queue.length > 0) {
         const currentId = queue.shift();
@@ -1295,14 +1202,13 @@ export async function deleteFolder(folderId, deleteRecursively = false) {
 
 export async function updateFolder(folderId, updates) {
   try {
-    const parsedFolderId = normalizeFolderId(folderId);
 
-    if (parsedFolderId === null) {
+    if (folderId === null) {
       throw new Error('Folder ID is required for update.');
     }
 
     return await db.transaction('rw', db.folders, async () => {
-      const current = await db.folders.get(parsedFolderId);
+      const current = await db.folders.get(folderId);
 
       if (!current) {
         throw new Error('Folder not found.');
@@ -1316,16 +1222,15 @@ export async function updateFolder(folderId, updates) {
       const hasParentUpdate = Object.prototype.hasOwnProperty.call(updates || {}, 'parentId');
 
       if (hasParentUpdate) {
-        const nextParentId = normalizeParentId(updates.parentId);
 
-        if (nextParentId !== null) {
-          if (nextParentId === parsedFolderId) {
+        if (updates.parentId !== null) {
+          if (updates.parentId === folderId) {
             throw new Error('A folder cannot be its own parent.');
           }
 
           const allFolders = await db.folders.toArray();
           const descendants = new Set();
-          const queue = [parsedFolderId];
+          const queue = [folderId];
 
           while (queue.length > 0) {
             const currentId = queue.shift();
@@ -1338,12 +1243,12 @@ export async function updateFolder(folderId, updates) {
             });
           }
 
-          if (descendants.has(nextParentId)) {
+          if (descendants.has(updates.parentId)) {
             throw new Error('A folder cannot be moved into its own subfolder.');
           }
         }
 
-        nextFolder.parentId = nextParentId;
+        nextFolder.parentId = updates.parentId;
 
         if (nextFolder.parentId !== current.parentId && !Object.prototype.hasOwnProperty.call(updates || {}, 'customOrder')) {
           nextFolder.customOrder = await getNextFolderCustomOrder(nextFolder.parentId);
@@ -1351,7 +1256,7 @@ export async function updateFolder(folderId, updates) {
       }
 
       if (Object.prototype.hasOwnProperty.call(updates || {}, 'name')) {
-        const normalizedName = normalizeFolderName(updates.name);
+        const normalizedName = updates.name.trim();
 
         if (!normalizedName) {
           throw new Error('Folder name is required.');
@@ -1359,7 +1264,7 @@ export async function updateFolder(folderId, updates) {
 
         const siblingFoldersSafe = await getFoldersByParentId(nextFolder.parentId ?? null);
         const hasDuplicateName = siblingFoldersSafe.some((folder) => {
-          return folder.id !== parsedFolderId && folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
+          return folder.id !== folderId && folder.name.trim().toLowerCase() === normalizedName.toLowerCase();
         });
 
         if (hasDuplicateName) {
@@ -1369,11 +1274,11 @@ export async function updateFolder(folderId, updates) {
         nextFolder.name = normalizedName;
       }
 
-      nextFolder.updatedAt = getNowTimestamp();
+      nextFolder.updatedAt = Date.now();
       nextFolder.customOrder = normalizeCustomOrder(nextFolder.customOrder, 0);
 
       await db.folders.put(nextFolder);
-      return parsedFolderId;
+      return folderId;
     });
   } catch (error) {
     console.error('Error updating folder:', error);
@@ -1381,356 +1286,4 @@ export async function updateFolder(folderId, updates) {
   }
 }
 
-export async function exportDatabase() {
-  try {
-    return await db.transaction('r', db.folders, db.icons, db.bookmarks, async () => {
-      const folders = (await db.folders.toArray()).map(normalizeFolderRecord);
-      const iconRows = await db.icons.toArray();
-      const bookmarks = (await db.bookmarks.toArray()).map(normalizeBookmarkRecord);
-
-      const icons = (await Promise.all(
-        iconRows.map(async (icon) => {
-          const normalizedIcon = normalizeIconData(icon);
-
-          if (!normalizedIcon || !isNonEmptyId(normalizedIcon.id)) {
-            return null;
-          }
-
-          const data = String(normalizedIcon.data ?? '');
-          const hash = await ensureIconHash(data, normalizedIcon.hash ?? '');
-
-          return {
-            id: String(normalizedIcon.id),
-            data,
-            hash: String(hash ?? '')
-          };
-        })
-      )).filter(Boolean);
-
-      return {
-        version: 6,
-        exportedAt: new Date().toISOString(),
-        data: {
-          folders,
-          icons,
-          bookmarks
-        }
-      };
-    });
-  } catch (error) {
-    console.error('Error exporting database:', error);
-    throw error;
-  }
-}
-
-export async function importDatabaseReplace(payload) {
-  try {
-    const now = getNowTimestamp();
-    const parsedPayload = typeof payload === 'string'
-      ? JSON.parse(payload)
-      : payload;
-
-    const data = parsedPayload?.data ?? parsedPayload;
-
-    const folders = ensureArray(data?.folders, 'folders')
-      .map((folder) => ({
-        id: String(folder.id ?? '').trim() || ulid(),
-        name: normalizeFolderName(folder.name),
-        parentId: folder.parentId === null || folder.parentId === undefined
-          ? null
-          : normalizeEntityId(folder.parentId),
-        createdAt: normalizeTimestamp(folder.createdAt, now),
-        updatedAt: normalizeTimestamp(folder.updatedAt, now),
-        customOrder: normalizeCustomOrder(folder.customOrder, 0)
-      }))
-      .filter((folder) => isNonEmptyId(folder.id) && folder.name);
-
-    const folderIds = new Set(folders.map((folder) => folder.id));
-
-    folders.forEach((folder) => {
-      if (!folder.parentId || !folderIds.has(folder.parentId)) {
-        folder.parentId = null;
-      }
-
-      folder.createdAt = normalizeTimestamp(folder.createdAt, now);
-      folder.updatedAt = normalizeTimestamp(folder.updatedAt, folder.createdAt);
-      folder.customOrder = normalizeCustomOrder(folder.customOrder, 0);
-    });
-
-    const icons = ensureArray(data?.icons, 'icons')
-      .map((icon) => ({
-        id: String(icon.id ?? '').trim() || ulid(),
-        data: String(icon.data ?? icon.base64 ?? ''),
-        hash: String(icon.hash ?? '')
-      }))
-      .filter((icon) => isNonEmptyId(icon.id));
-
-    const validFolderIds = new Set(folders.map((folder) => folder.id));
-    const validIconIds = new Set(icons.map((icon) => icon.id));
-
-    const bookmarks = ensureArray(data?.bookmarks, 'bookmarks')
-      .map((bookmark) => {
-        const id = String(bookmark.id ?? '').trim() || ulid();
-        const folderId = bookmark.folderId === null || bookmark.folderId === undefined
-          ? null
-          : normalizeEntityId(bookmark.folderId);
-        const iconId = bookmark.iconId === null || bookmark.iconId === undefined
-          ? null
-          : normalizeEntityId(bookmark.iconId);
-
-        return {
-          id,
-          title: String(bookmark.title ?? ''),
-          url: String(bookmark.url ?? ''),
-          folderId: folderId && validFolderIds.has(folderId) ? folderId : null,
-          iconId: iconId && validIconIds.has(iconId) ? iconId : null,
-          createdAt: normalizeTimestamp(bookmark.createdAt, now),
-          updatedAt: normalizeTimestamp(bookmark.updatedAt, now),
-          lastClickedAt: normalizeNullableTimestamp(bookmark.lastClickedAt),
-          customOrder: normalizeCustomOrder(bookmark.customOrder, 0)
-        };
-      })
-      .filter((bookmark) => isNonEmptyId(bookmark.id) && bookmark.url);
-
-    bookmarks.forEach((bookmark) => {
-      bookmark.createdAt = normalizeTimestamp(bookmark.createdAt, now);
-      bookmark.updatedAt = normalizeTimestamp(bookmark.updatedAt, bookmark.createdAt);
-      bookmark.lastClickedAt = normalizeNullableTimestamp(bookmark.lastClickedAt);
-      bookmark.customOrder = normalizeCustomOrder(bookmark.customOrder, 0);
-    });
-
-    await db.transaction('rw', db.folders, db.icons, db.bookmarks, async () => {
-      await db.bookmarks.clear();
-      await db.icons.clear();
-      await db.folders.clear();
-
-      if (folders.length > 0) {
-        await db.folders.bulkAdd(folders);
-      }
-
-      if (icons.length > 0) {
-        await db.icons.bulkAdd(icons);
-      }
-
-      if (bookmarks.length > 0) {
-        await db.bookmarks.bulkAdd(bookmarks);
-      }
-    });
-
-    return {
-      folders: folders.length,
-      icons: icons.length,
-      bookmarks: bookmarks.length
-    };
-  } catch (error) {
-    console.error('Error importing database:', error);
-    throw error;
-  }
-}
-
-export async function normalizeLegacyIconsToBase64(options: { onProgress?: ((progress: NormalizeIconsProgress) => void) | null; storageMode?: 'base64' | 'url' } = {}): Promise<NormalizeIconsSummary> {
-  const onProgress = typeof options?.onProgress === 'function' ? options.onProgress : null;
-  const storageMode = options?.storageMode === 'url' ? 'url' : 'base64';
-  const icons = (await db.icons.toArray()).map(normalizeIconData);
-  const bookmarks = await db.bookmarks.toArray();
-  const bookmarksByIconId = new Map();
-  const domainCache = new Map();
-  const totalIcons = icons.length;
-
-  function reportProgress(progress) {
-    if (!onProgress) {
-      return;
-    }
-
-    onProgress({
-      total: totalIcons,
-      ...progress
-    });
-  }
-
-  reportProgress({ stage: 'start', processed: 0 });
-
-  bookmarks.forEach((bookmark) => {
-    if (!isNonEmptyId(bookmark.iconId)) {
-      return;
-    }
-
-    if (!bookmarksByIconId.has(bookmark.iconId)) {
-      bookmarksByIconId.set(bookmark.iconId, []);
-    }
-
-    bookmarksByIconId.get(bookmark.iconId).push(bookmark);
-  });
-
-  const nextDataByIconId = new Map();
-  const nextHashByIconId = new Map();
-  let processed = 0;
-  let failed = 0;
-
-  for (const icon of icons) {
-    const normalized = normalizeIconPayload(icon.data);
-
-    if (!normalized) {
-      nextDataByIconId.set(icon.id, null);
-      nextHashByIconId.set(icon.id, normalizeIconHash(icon.hash) || '');
-      processed += 1;
-      reportProgress({ stage: 'convert', processed });
-      continue;
-    }
-
-    if (isDataUri(normalized)) {
-      const hash = await ensureIconHash(normalized, icon.hash);
-      nextDataByIconId.set(icon.id, normalized);
-      nextHashByIconId.set(icon.id, hash || '');
-      processed += 1;
-      reportProgress({ stage: 'convert', processed });
-      continue;
-    }
-
-    const relatedBookmarks = bookmarksByIconId.get(icon.id) || [];
-    const primaryBookmarkUrl = relatedBookmarks[0]?.url || '';
-    const converted = await resolveBookmarkIconPayload(primaryBookmarkUrl, normalized, {
-      domainCache,
-      storageMode,
-      skipPageHtmlLookup: true
-    });
-
-    if (!converted?.data) {
-      if (storageMode === 'url' && isHttpUrl(normalized)) {
-        let hash = normalizeIconHash(icon.hash);
-
-        if (!hash) {
-          const hashed = await fetchUrlAsIconPayload(normalized, {
-            storageMode: 'url',
-            throttleGoogle: isGoogleFaviconUrl(normalized)
-          });
-
-          hash = normalizeIconHash(hashed?.hash);
-        }
-
-        hash = await ensureIconHash(normalized, hash);
-
-        nextDataByIconId.set(icon.id, normalized);
-        nextHashByIconId.set(icon.id, hash || '');
-
-        if (!hash) {
-          failed += 1;
-        }
-
-        processed += 1;
-        reportProgress({ stage: 'convert', processed, failed });
-        continue;
-      }
-
-      failed += 1;
-    }
-
-    nextDataByIconId.set(icon.id, converted?.data || null);
-    nextHashByIconId.set(
-      icon.id,
-      await ensureIconHash(converted?.data || '', converted?.hash || '')
-    );
-    processed += 1;
-    reportProgress({ stage: 'convert', processed, failed });
-  }
-
-  reportProgress({ stage: 'merge', processed: totalIcons, failed });
-
-  const canonicalByData = new Map();
-  const canonicalByHash = new Map();
-  const targetIconIdByIconId = new Map();
-
-  icons.forEach((icon) => {
-    const nextData = nextDataByIconId.get(icon.id) || null;
-    const nextHash = normalizeIconHash(nextHashByIconId.get(icon.id));
-
-    if (!nextData) {
-      targetIconIdByIconId.set(icon.id, null);
-      return;
-    }
-
-    if (nextHash && canonicalByHash.has(nextHash)) {
-      targetIconIdByIconId.set(icon.id, canonicalByHash.get(nextHash));
-      return;
-    }
-
-    if (canonicalByData.has(nextData)) {
-      targetIconIdByIconId.set(icon.id, canonicalByData.get(nextData));
-      return;
-    }
-
-    if (nextHash) {
-      canonicalByHash.set(nextHash, icon.id);
-    }
-
-    canonicalByData.set(nextData, icon.id);
-    targetIconIdByIconId.set(icon.id, icon.id);
-  });
-
-  const summary = {
-    total: totalIcons,
-    converted: 0,
-    detached: 0,
-    reattached: 0,
-    deleted: 0,
-    failed
-  };
-
-  await db.transaction('rw', db.icons, db.bookmarks, async () => {
-    for (const icon of icons) {
-      const nextData = nextDataByIconId.get(icon.id) || null;
-      const nextHash = normalizeIconHash(nextHashByIconId.get(icon.id)) || '';
-
-      if (nextData && icon.data !== nextData) {
-        await db.icons.update(icon.id, {
-          data: nextData,
-          hash: nextHash
-        });
-        summary.converted += 1;
-        continue;
-      }
-
-      if (String(icon.hash ?? '') !== nextHash) {
-        await db.icons.update(icon.id, { hash: nextHash });
-      }
-    }
-
-    for (const icon of icons) {
-      const targetIconId = targetIconIdByIconId.get(icon.id);
-
-      if (targetIconId === icon.id) {
-        continue;
-      }
-
-      if (targetIconId === null) {
-        const detachedCount = await db.bookmarks.where('iconId').equals(icon.id).modify({ iconId: null });
-        summary.detached += detachedCount;
-        continue;
-      }
-
-      const reattachedCount = await db.bookmarks.where('iconId').equals(icon.id).modify({ iconId: targetIconId });
-      summary.reattached += reattachedCount;
-    }
-
-    const referencedIconIds = new Set(
-      (await db.bookmarks.toArray())
-        .map((bookmark) => bookmark.iconId)
-        .filter((iconId) => isNonEmptyId(iconId))
-    );
-
-    const existingIcons = await db.icons.toArray();
-
-    for (const icon of existingIcons) {
-      if (referencedIconIds.has(icon.id)) {
-        continue;
-      }
-
-      await db.icons.delete(icon.id);
-      summary.deleted += 1;
-    }
-  });
-
-  reportProgress({ stage: 'done', processed: totalIcons, summary });
-
-  return summary;
-}
+// End: Folder

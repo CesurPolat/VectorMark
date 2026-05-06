@@ -4,18 +4,6 @@ const ICON_FETCH_TIMEOUT_MS = 7000;
 const GOOGLE_FAVICON_MIN_INTERVAL_MS = 180;
 let lastGoogleFaviconFetchAt = 0;
 
-export function normalizeIconData(icon: IconRow | null | undefined): IconRow | null {
-  if (!icon) {
-    return null;
-  }
-
-  return {
-    ...icon,
-    data: String(icon.data ?? icon.base64 ?? ''),
-    hash: String(icon.hash ?? '')
-  };
-}
-
 export function normalizeIconPayload(data: unknown): string | null {
   const value = String(data ?? '').trim();
   return value || null;

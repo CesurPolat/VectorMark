@@ -1,17 +1,16 @@
 export type ViewMode = 'list' | 'grid';
 export type IconStorageMode = 'base64' | 'url';
 export type SortDirection = 'asc' | 'desc';
-export type BookmarkSortBy = 'customOrder' | 'updatedAt' | 'createdAt' | 'lastClickedAt' | 'title' | 'id';
-export type FolderSortBy = 'customOrder' | 'updatedAt' | 'createdAt' | 'name' | 'bookmarkCount' | 'id';
+export type SortFields = 'customOrder' | 'updatedAt' | 'createdAt' | 'lastClickedAt' | 'title' | 'name' | 'id';
 
 export interface Settings {
   openInNewTab: boolean;
   pageSize: number;
   viewMode: ViewMode;
   iconStorageMode: IconStorageMode;
-  bookmarkSortBy: BookmarkSortBy;
+  bookmarkSortBy: SortFields;//TODO: Remove
   bookmarkSortDir: SortDirection;
-  folderSortBy: FolderSortBy;
+  folderSortBy: SortFields;//TODO: Remove
   folderSortDir: SortDirection;
   manualOrderEnabled: boolean;
 }
@@ -32,7 +31,6 @@ export interface IconRow {
   id: string;
   data: string;
   hash: string;
-  base64?: string;
 }
 
 export interface BookmarkRecord {
@@ -62,15 +60,9 @@ export interface IconPayload {
   hash: string | null;
 }
 
-export interface BookmarkQueryOptions {
+export interface QueryOptions {
   rootOnly?: boolean;
-  sortBy?: BookmarkSortBy;
-  sortDir?: SortDirection;
-}
-
-export interface FolderQueryOptions {
-  rootOnly?: boolean;
-  sortBy?: FolderSortBy;
+  sortBy?: SortFields;
   sortDir?: SortDirection;
 }
 
