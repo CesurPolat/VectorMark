@@ -1,3 +1,7 @@
+import $ from 'jquery';
+import '@fortawesome/fontawesome-free/js/all.min.js';
+import 'bulma/css/bulma.min.css';
+
 import {
   deleteBookmarkByUrl,
   saveOrUpdateBookmarkByUrl,

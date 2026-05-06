@@ -1,4 +1,4 @@
-import { isUrlExist } from '../services/dbService.js';
+import { isUrlExist } from './services/dbService.js';
 
 var isPanelOpen = false;
 

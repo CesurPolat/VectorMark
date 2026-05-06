@@ -1,4 +1,8 @@
-﻿import {
+﻿import $ from 'jquery';
+import '@fortawesome/fontawesome-free/js/all.min.js';
+import 'bulma/css/bulma.min.css';
+
+import {
   listBookmarksPageWithIcons,
   searchBookmarksPage,
   countBookmarks,
@@ -1879,8 +1883,8 @@ async function openSettingsPage() {
 
 async function toggleFullscreenMode() {
   const panelUrl = chrome?.runtime?.getURL
-    ? chrome.runtime.getURL('sidepanel/sidepanel.html')
-    : 'sidepanel/sidepanel.html';
+    ? chrome.runtime.getURL('src/sidepanel/sidepanel.html')
+    : '../src/sidepanel/sidepanel.html';
 
   try {
     await chrome.tabs.create({

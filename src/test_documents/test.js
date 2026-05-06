@@ -1,6 +1,6 @@
-import { VecLite, IndexedDBAdapter } from '../node_modules/veclite/dist/index.js';
-import { pipeline, env } from '../node_modules/@huggingface/transformers/dist/transformers.min.js';
-import { monotonicFactory, decodeTime } from '../node_modules/ulid/dist/browser/index.js';
+import { VecLite, IndexedDBAdapter } from 'veclite';
+import { pipeline, env } from '../../node_modules/@huggingface/transformers/dist/transformers.min.js';
+import { monotonicFactory, decodeTime } from 'ulid';
 
 const VECTOR_DIMENSIONS = 384;
 const INDEX_DB_NAME = 'VectorMarkLanceTest';

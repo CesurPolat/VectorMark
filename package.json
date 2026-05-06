@@ -4,6 +4,7 @@
   "description": "VectorMark — Smart bookmark manager that automatically categorizes and organizes your saved websites.",
   "main": "background.js",
   "scripts": {
+    "build": "vite build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -25,5 +26,8 @@
     "jquery": "^4.0.0",
     "ulid": "^3.0.2",
     "veclite": "^0.3.0"
+  },
+  "devDependencies": {
+    "vite": "^8.0.10"
   }
 }

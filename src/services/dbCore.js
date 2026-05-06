@@ -1,4 +1,4 @@
-import '../node_modules/dexie/dist/dexie.min.js';
+import Dexie from 'dexie';
 
 export const db = new Dexie('myDatabase');
 

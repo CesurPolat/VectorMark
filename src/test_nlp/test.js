@@ -1,4 +1,4 @@
-import { pipeline, env } from "../node_modules/@huggingface/transformers/dist/transformers.min.js";
+import { pipeline, env } from "../../node_modules/@huggingface/transformers/dist/transformers.min.js";
 
 //env.localModelPath = chrome.runtime.getURL("models/");
 
