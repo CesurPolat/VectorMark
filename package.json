@@ -5,6 +5,7 @@
   "main": "background.js",
   "scripts": {
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -28,6 +29,9 @@
     "veclite": "^0.3.0"
   },
   "devDependencies": {
+    "@types/chrome": "^0.1.24",
+    "@types/jquery": "^3.5.33",
+    "typescript": "^5.9.3",
     "vite": "^8.0.10"
   }
 }

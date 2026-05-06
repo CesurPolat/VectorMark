@@ -1,6 +1,13 @@
 import Dexie from 'dexie';
+import type { BookmarkRecord, FolderRecord, IconRow } from '../types';
 
-export const db = new Dexie('myDatabase');
+export interface VectorMarkDatabase extends Dexie {
+  folders: Dexie.Table<FolderRecord, number>;
+  icons: Dexie.Table<IconRow, number>;
+  bookmarks: Dexie.Table<BookmarkRecord, number>;
+}
+
+export const db = new Dexie('myDatabase') as VectorMarkDatabase;
 
 db.version(1).stores({
   folders: '++id, &name',

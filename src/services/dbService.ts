@@ -1,4 +1,4 @@
-import { db } from './dbCore.js';
+import { db } from './dbCore';
 import {
   normalizeIconData,
   normalizeIconPayload,
@@ -11,7 +11,24 @@ import {
   fetchUrlAsIconPayload,
   resolveBookmarkIconPayload,
   resolveBookmarkIconData
-} from './iconService.js';
+} from './iconService';
+import type {
+  BookmarkImportItem,
+  BookmarkQueryOptions,
+  BookmarkRecord,
+  BookmarkSortBy,
+  BookmarkWithIcon,
+  DatabaseExportPayload,
+  FolderQueryOptions,
+  FolderRecord,
+  FolderSortBy,
+  IconPayload,
+  IconRow,
+  NormalizeIconsProgress,
+  NormalizeIconsSummary,
+  SaveOrUpdateBookmarkResult,
+  SortDirection
+} from '../types';
 
 async function getOrCreateIconId(iconInput) {
   const normalizedIcon = normalizeIconInput(iconInput);
@@ -128,7 +145,7 @@ function normalizeFolderSortBy(sortBy, fallback = 'name') {
   return FOLDER_SORT_FIELDS.has(sortBy) ? sortBy : fallback;
 }
 
-function getBookmarkSortOptions(options = {}) {
+function getBookmarkSortOptions(options: BookmarkQueryOptions = {}) {
   const sortBy = normalizeBookmarkSortBy(String(options?.sortBy ?? '').trim() || 'updatedAt');
   const fallbackDirection = sortBy === 'title' || sortBy === 'customOrder' ? 'asc' : 'desc';
 
@@ -138,7 +155,7 @@ function getBookmarkSortOptions(options = {}) {
   };
 }
 
-function getFolderSortOptions(options = {}) {
+function getFolderSortOptions(options: FolderQueryOptions = {}) {
   const sortBy = normalizeFolderSortBy(String(options?.sortBy ?? '').trim() || 'name');
   const fallbackDirection = sortBy === 'name' || sortBy === 'customOrder' ? 'asc' : 'desc';
 
@@ -400,7 +417,7 @@ function toSafePageSize(value, fallback = 40) {
   return Math.min(250, Math.max(1, parsed));
 }
 
-function toQueryOptions(options = {}) {
+function toQueryOptions(options: BookmarkQueryOptions = {}): BookmarkQueryOptions {
   return {
     rootOnly: options?.rootOnly === true,
     sortBy: options?.sortBy,
@@ -412,14 +429,17 @@ function isRootBookmark(bookmark) {
   return bookmark?.folderId === null || bookmark?.folderId === undefined;
 }
 
-function normalizeBookmarkRecord(record = {}) {
+function normalizeBookmarkRecord(record: Partial<BookmarkRecord> = {}): BookmarkRecord {
   const now = getNowTimestamp();
   const createdAt = normalizeTimestamp(record.createdAt, now);
   const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
 
   return {
-    ...record,
+    id: record.id,
+    title: String(record.title ?? ''),
+    url: String(record.url ?? ''),
     folderId: normalizeBookmarkFolderId(record.folderId),
+    iconId: Number.isInteger(record.iconId) ? Number(record.iconId) : null,
     createdAt,
     updatedAt,
     lastClickedAt: normalizeNullableTimestamp(record.lastClickedAt),
@@ -427,7 +447,7 @@ function normalizeBookmarkRecord(record = {}) {
   };
 }
 
-async function getFolderBookmarkRecords(folderId = null, options = {}) {
+async function getFolderBookmarkRecords(folderId: number | null = null, options: BookmarkQueryOptions = {}) {
   const queryOptions = toQueryOptions(options);
 
   if (folderId === null) {
@@ -684,7 +704,7 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
         }
       }
 
-      const updates = {
+      const updates: Partial<BookmarkRecord> = {
         title,
         updatedAt: now
       };
@@ -1216,8 +1236,8 @@ export async function deleteFolder(folderId, deleteRecursively = false) {
       }
 
       const allFolders = await db.folders.toArray();
-      const descendants = new Set();
-      const queue = [parsedFolderId];
+      const descendants = new Set<number>();
+      const queue: number[] = [parsedFolderId];
 
       while (queue.length > 0) {
         const currentId = queue.shift();
@@ -1230,7 +1250,7 @@ export async function deleteFolder(folderId, deleteRecursively = false) {
         });
       }
 
-      const folderIdsToDelete = Array.from(descendants);
+      const folderIdsToDelete: number[] = Array.from(descendants);
 
       if (deleteRecursively) {
         // Alt klasörler ve içindeki bookmarkları kalıcı olarak sil
@@ -1492,7 +1512,7 @@ export async function importDatabaseReplace(payload) {
   }
 }
 
-export async function normalizeLegacyIconsToBase64(options = {}) {
+export async function normalizeLegacyIconsToBase64(options: { onProgress?: ((progress: NormalizeIconsProgress) => void) | null; storageMode?: 'base64' | 'url' } = {}): Promise<NormalizeIconsSummary> {
   const onProgress = typeof options?.onProgress === 'function' ? options.onProgress : null;
   const storageMode = options?.storageMode === 'url' ? 'url' : 'base64';
   const icons = (await db.icons.toArray()).map(normalizeIconData);

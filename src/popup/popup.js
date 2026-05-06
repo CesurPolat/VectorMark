@@ -8,8 +8,8 @@ import {
   resolveBookmarkIconPayload,
   listFolders,
   getBookmarkByUrl
-} from '../services/dbService.js';
-import { getSettings } from '../services/settingsService.js';
+} from '../services/dbService';
+import { getSettings } from '../services/settingsService';
 
 let selectedFolderId = null;
 

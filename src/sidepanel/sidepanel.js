@@ -21,12 +21,12 @@ import {
   saveOrUpdateBookmarkByUrl,
   resolveBookmarkIconPayload,
   normalizeLegacyIconsToBase64
-} from '../services/dbService.js';
+} from '../services/dbService';
 import {
   getSettings,
   updateSettings,
   getDefaultSettings
-} from '../services/settingsService.js';
+} from '../services/settingsService';
 import {
   downloadTextFile,
   getChromeBookmarkTree,
@@ -36,7 +36,7 @@ import {
   folderMapKey,
   escapeHtml,
   escapeAttr
-} from './sidepanel-utils.js';
+} from './sidepanel-utils';
 
 const state = {
   bookmarks: [],
@@ -2256,4 +2256,3 @@ async function resolveFolderId(folderPath, folderMap) {
 
   return parentId;
 }
-

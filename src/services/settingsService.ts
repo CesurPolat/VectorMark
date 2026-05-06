@@ -1,4 +1,6 @@
-const DEFAULT_SETTINGS = {
+import type { PartialSettingsInput, Settings, ViewMode, IconStorageMode, BookmarkSortBy, FolderSortBy, SortDirection } from '../types';
+
+const DEFAULT_SETTINGS: Settings = {
   openInNewTab: false,
   pageSize: 40,
   viewMode: 'list',
@@ -22,22 +24,22 @@ function clampPageSize(value) {
   return Math.max(1, Math.min(250, Math.floor(parsed)));
 }
 
-function normalizeSettings(raw = {}) {
-  const iconStorageMode = raw.iconStorageMode === 'url' ? 'url' : 'base64';
-  const viewMode = raw.viewMode === 'grid' ? 'grid' : 'list';
+function normalizeSettings(raw: PartialSettingsInput = {}): Settings {
+  const iconStorageMode: IconStorageMode = raw.iconStorageMode === 'url' ? 'url' : 'base64';
+  const viewMode: ViewMode = raw.viewMode === 'grid' ? 'grid' : 'list';
   const bookmarkSortBy = String(raw.bookmarkSortBy ?? '').trim();
-  const bookmarkSortDir = raw.bookmarkSortDir === 'asc' ? 'asc' : 'desc';
+  const bookmarkSortDir: SortDirection = raw.bookmarkSortDir === 'asc' ? 'asc' : 'desc';
   const folderSortBy = String(raw.folderSortBy ?? '').trim();
-  const folderSortDir = raw.folderSortDir === 'desc' ? 'desc' : 'asc';
+  const folderSortDir: SortDirection = raw.folderSortDir === 'desc' ? 'desc' : 'asc';
 
   return {
     openInNewTab: raw.openInNewTab === true,
     pageSize: clampPageSize(raw.pageSize),
     viewMode,
     iconStorageMode,
-    bookmarkSortBy: bookmarkSortBy || DEFAULT_SETTINGS.bookmarkSortBy,
+    bookmarkSortBy: (bookmarkSortBy || DEFAULT_SETTINGS.bookmarkSortBy) as BookmarkSortBy,
     bookmarkSortDir,
-    folderSortBy: folderSortBy || DEFAULT_SETTINGS.folderSortBy,
+    folderSortBy: (folderSortBy || DEFAULT_SETTINGS.folderSortBy) as FolderSortBy,
     folderSortDir,
     manualOrderEnabled: raw.manualOrderEnabled === true
   };
@@ -47,14 +49,14 @@ function getStorage() {
   return chrome?.storage?.local ?? null;
 }
 
-export async function getSettings() {
+export async function getSettings(): Promise<Settings> {
   const storage = getStorage();
 
   if (!storage) {
     return { ...DEFAULT_SETTINGS };
   }
 
-  return await new Promise((resolve) => {
+  return await new Promise<Settings>((resolve) => {
     storage.get([
       SETTINGS_STORAGE_KEY,
       'openInNewTab',
@@ -87,7 +89,7 @@ export async function getSettings() {
   });
 }
 
-export async function updateSettings(partialSettings) {
+export async function updateSettings(partialSettings: PartialSettingsInput): Promise<Settings> {
   const storage = getStorage();
 
   if (!storage) {
@@ -97,7 +99,7 @@ export async function updateSettings(partialSettings) {
   const current = await getSettings();
   const merged = normalizeSettings({ ...current, ...partialSettings });
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     storage.set({
       [SETTINGS_STORAGE_KEY]: merged,
       // Keep legacy keys for backward compatibility.
@@ -125,6 +127,6 @@ export async function updateSettings(partialSettings) {
   return merged;
 }
 
-export function getDefaultSettings() {
+export function getDefaultSettings(): Settings {
   return { ...DEFAULT_SETTINGS };
 }

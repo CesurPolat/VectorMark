@@ -10,12 +10,12 @@ import {
   saveOrUpdateBookmarkByUrl,
   resolveBookmarkIconPayload,
   normalizeLegacyIconsToBase64
-} from '../services/dbService.js';
+} from '../services/dbService';
 import {
   getSettings,
   updateSettings,
   getDefaultSettings
-} from '../services/settingsService.js';
+} from '../services/settingsService';
 import {
   downloadTextFile,
   getChromeBookmarkTree,
@@ -23,7 +23,7 @@ import {
   parseBookmarkJsonImport,
   parseNetscapeBookmarkHtml,
   folderMapKey
-} from '../sidepanel/sidepanel-utils.js';
+} from '../sidepanel/sidepanel-utils';
 
 const state = {
   settingsBusy: false,

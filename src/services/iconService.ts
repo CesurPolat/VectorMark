@@ -1,8 +1,10 @@
+import type { IconPayload, IconRow, IconStorageMode } from '../types';
+
 const ICON_FETCH_TIMEOUT_MS = 7000;
 const GOOGLE_FAVICON_MIN_INTERVAL_MS = 180;
 let lastGoogleFaviconFetchAt = 0;
 
-export function normalizeIconData(icon) {
+export function normalizeIconData(icon: IconRow | null | undefined): IconRow | null {
   if (!icon) {
     return null;
   }
@@ -14,17 +16,17 @@ export function normalizeIconData(icon) {
   };
 }
 
-export function normalizeIconPayload(data) {
+export function normalizeIconPayload(data: unknown): string | null {
   const value = String(data ?? '').trim();
   return value || null;
 }
 
-export function normalizeIconHash(hash) {
+export function normalizeIconHash(hash: unknown): string | null {
   const value = String(hash ?? '').trim();
   return value || null;
 }
 
-export function normalizeIconInput(icon) {
+export function normalizeIconInput(icon: IconPayload | IconRow | string | null | undefined): IconPayload | null {
   if (icon === null || icon === undefined) {
     return null;
   }
@@ -46,11 +48,11 @@ export function normalizeIconInput(icon) {
   };
 }
 
-export function isDataUri(value) {
+export function isDataUri(value: unknown): boolean {
   return /^data:/i.test(String(value ?? '').trim());
 }
 
-export function isHttpUrl(value) {
+export function isHttpUrl(value: unknown): boolean {
   return /^https?:\/\//i.test(String(value ?? '').trim());
 }
 
@@ -103,7 +105,7 @@ function getIconDomainKey(pageUrl, iconUrl = '') {
   return extractHostnameFromUrl(iconUrl);
 }
 
-export function isGoogleFaviconUrl(url) {
+export function isGoogleFaviconUrl(url: unknown): boolean {
   try {
     const parsed = new URL(String(url ?? '').trim());
     return parsed.hostname === 'www.google.com' && parsed.pathname === '/s2/favicons';
@@ -112,7 +114,7 @@ export function isGoogleFaviconUrl(url) {
   }
 }
 
-async function sleep(ms) {
+async function sleep(ms: number): Promise<void> {
   if (!Number.isFinite(ms) || ms <= 0) {
     return;
   }
@@ -148,7 +150,7 @@ function buildGoogleFaviconUrl(pageUrl) {
   }
 }
 
-async function blobToDataUrl(blob) {
+async function blobToDataUrl(blob: Blob): Promise<string> {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -176,7 +178,7 @@ function base64ToBytes(base64) {
   return bytes;
 }
 
-async function sha256Hex(bufferLike) {
+async function sha256Hex(bufferLike: BufferSource): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', bufferLike);
   const bytes = new Uint8Array(hashBuffer);
 
@@ -185,12 +187,12 @@ async function sha256Hex(bufferLike) {
     .join('');
 }
 
-async function hashText(value) {
+async function hashText(value: unknown): Promise<string> {
   const encoded = new TextEncoder().encode(String(value ?? ''));
   return await sha256Hex(encoded);
 }
 
-async function hashFromDataUri(dataUri) {
+async function hashFromDataUri(dataUri: unknown): Promise<string | null> {
   try {
     const match = String(dataUri ?? '').match(/^data:([^;,]+)?(;base64)?,(.*)$/i);
 
@@ -214,7 +216,7 @@ async function hashFromDataUri(dataUri) {
   }
 }
 
-export async function ensureIconHash(data, currentHash = '') {
+export async function ensureIconHash(data: unknown, currentHash = ''): Promise<string> {
   const existingHash = normalizeIconHash(currentHash);
 
   if (existingHash) {
@@ -308,7 +310,7 @@ async function findFaviconUrlFromPageHtml(pageUrl) {
   }
 }
 
-export async function fetchUrlAsIconPayload(url, options = {}) {
+export async function fetchUrlAsIconPayload(url: unknown, options: { storageMode?: IconStorageMode; throttleGoogle?: boolean } = {}): Promise<IconPayload | null> {
   if (!isHttpUrl(url)) {
     return null;
   }
@@ -319,9 +321,10 @@ export async function fetchUrlAsIconPayload(url, options = {}) {
 
   const controller = new AbortController();
   const timeoutId = globalThis.setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS);
+  const requestUrl = String(url).trim();
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(requestUrl, {
       signal: controller.signal,
       cache: 'force-cache'
     });
@@ -357,7 +360,7 @@ export async function fetchUrlAsIconPayload(url, options = {}) {
   }
 }
 
-export async function resolveBookmarkIconPayload(pageUrl, preferredIconUrl = '', options = {}) {
+export async function resolveBookmarkIconPayload(pageUrl: unknown, preferredIconUrl = '', options: { domainCache?: Map<string, IconPayload | null>; storageMode?: IconStorageMode; skipPageHtmlLookup?: boolean } = {}): Promise<IconPayload | null> {
   const preferred = String(preferredIconUrl ?? '').trim();
   const domainCache = options?.domainCache instanceof Map ? options.domainCache : null;
   const domainKey = getIconDomainKey(pageUrl, preferred);
@@ -415,7 +418,7 @@ export async function resolveBookmarkIconPayload(pageUrl, preferredIconUrl = '',
   return output;
 }
 
-export async function resolveBookmarkIconData(pageUrl, preferredIconUrl = '', options = {}) {
+export async function resolveBookmarkIconData(pageUrl: unknown, preferredIconUrl = '', options: { domainCache?: Map<string, IconPayload | null>; storageMode?: IconStorageMode; skipPageHtmlLookup?: boolean } = {}): Promise<string | null> {
   const payload = await resolveBookmarkIconPayload(pageUrl, preferredIconUrl, options);
   return payload?.data ?? null;
 }

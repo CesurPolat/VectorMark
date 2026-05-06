@@ -1,4 +1,6 @@
-export function downloadTextFile(filename, content, mimeType) {
+import type { BookmarkImportItem } from '../types';
+
+export function downloadTextFile(filename: string, content: string, mimeType: string): void {
   const blob = new Blob([content], { type: mimeType });
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -10,7 +12,7 @@ export function downloadTextFile(filename, content, mimeType) {
   URL.revokeObjectURL(objectUrl);
 }
 
-export function getChromeBookmarkTree() {
+export function getChromeBookmarkTree(): Promise<chrome.bookmarks.BookmarkTreeNode[]> {
   return new Promise((resolve, reject) => {
     chrome.bookmarks.getTree((nodes) => {
       const runtimeError = chrome.runtime?.lastError;
@@ -25,10 +27,10 @@ export function getChromeBookmarkTree() {
   });
 }
 
-export function flattenChromeBookmarkTree(nodes) {
-  const result = [];
+export function flattenChromeBookmarkTree(nodes: chrome.bookmarks.BookmarkTreeNode[]): BookmarkImportItem[] {
+  const result: BookmarkImportItem[] = [];
 
-  function walk(currentNodes, folderPath) {
+  function walk(currentNodes: chrome.bookmarks.BookmarkTreeNode[], folderPath: string[]) {
     (currentNodes || []).forEach((node) => {
       const isBookmark = !!node.url;
       const label = (node.title || '').trim();
@@ -52,11 +54,12 @@ export function flattenChromeBookmarkTree(nodes) {
   return result;
 }
 
-export function parseBookmarkJsonImport(raw) {
+export function parseBookmarkJsonImport(raw: unknown): BookmarkImportItem[] {
+  const rawObject = raw as { bookmarks?: unknown[] } | null;
   const items = Array.isArray(raw)
     ? raw
-    : Array.isArray(raw?.bookmarks)
-      ? raw.bookmarks
+    : Array.isArray(rawObject?.bookmarks)
+      ? rawObject.bookmarks
       : null;
 
   if (!items) {
@@ -72,7 +75,7 @@ export function parseBookmarkJsonImport(raw) {
     .filter((item) => item.url);
 }
 
-export function parseNetscapeBookmarkHtml(html) {
+export function parseNetscapeBookmarkHtml(html: string): BookmarkImportItem[] {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
   const rootDl = doc.querySelector('dl');
@@ -81,12 +84,12 @@ export function parseNetscapeBookmarkHtml(html) {
     throw new Error('Netscape bookmark file does not contain a DL root.');
   }
 
-  const result = [];
+  const result: BookmarkImportItem[] = [];
 
-  function getDirectChildByTag(parent, tagName) {
+  function getDirectChildByTag(parent: Element, tagName: string): Element | null {
     const upper = tagName.toUpperCase();
 
-    for (const child of parent.children) {
+    for (const child of Array.from(parent.children)) {
       if (child.tagName === upper) {
         return child;
       }
@@ -95,7 +98,7 @@ export function parseNetscapeBookmarkHtml(html) {
     return null;
   }
 
-  function walkDl(dl, folderPath) {
+  function walkDl(dl: Element, folderPath: string[]) {
     const children = Array.from(dl.children);
 
     for (let index = 0; index < children.length; index += 1) {
@@ -141,11 +144,11 @@ export function parseNetscapeBookmarkHtml(html) {
   return result;
 }
 
-export function folderMapKey(parentId, name) {
+export function folderMapKey(parentId: number | null, name: string): string {
   return `${parentId === null ? 'root' : parentId}:${name.toLowerCase()}`;
 }
 
-export function escapeHtml(value) {
+export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -154,6 +157,6 @@ export function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-export function escapeAttr(value) {
+export function escapeAttr(value: unknown): string {
   return escapeHtml(value);
 }
