@@ -19,9 +19,9 @@ export interface Settings {
 export type PartialSettingsInput = Partial<Settings>;
 
 export interface FolderRecord {
-  id?: number;
+  id: string;
   name: string;
-  parentId: number | null;
+  parentId: string | null;
   createdAt: number;
   updatedAt: number;
   customOrder: number;
@@ -29,18 +29,18 @@ export interface FolderRecord {
 }
 
 export interface IconRow {
-  id?: number;
+  id: string;
   data: string;
   hash: string;
   base64?: string;
 }
 
 export interface BookmarkRecord {
-  id?: number;
+  id: string;
   title: string;
   url: string;
-  folderId: number | null;
-  iconId: number | null;
+  folderId: string | null;
+  iconId: string | null;
   createdAt: number;
   updatedAt: number;
   lastClickedAt: number | null;
@@ -80,7 +80,7 @@ export interface SearchBookmarksPageResult {
 }
 
 export interface SaveOrUpdateBookmarkResult {
-  bookmarkId: number;
+  bookmarkId: string;
   action: 'created' | 'updated';
 }
 

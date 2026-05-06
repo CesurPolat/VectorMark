@@ -73,6 +73,19 @@ const state = {
   moveModalOpen: false
 };
 
+function normalizeId(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function isValidId(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 let $searchInput;
 let $count;
 let $status;
@@ -391,7 +404,7 @@ function selectAllVisibleItems() {
 }
 
 function toggleFolderSelection(folderId) {
-  if (!Number.isInteger(folderId)) {
+  if (!isValidId(folderId)) {
     return;
   }
 
@@ -405,7 +418,7 @@ function toggleFolderSelection(folderId) {
 }
 
 function toggleBookmarkSelection(bookmarkId) {
-  if (!Number.isInteger(bookmarkId)) {
+  if (!isValidId(bookmarkId)) {
     return;
   }
 
@@ -523,9 +536,9 @@ async function submitMoveModal() {
   }
 
   const rawValue = String($moveTargetFolderSelect.val() ?? 'root');
-  const targetFolderId = rawValue === 'root' ? null : Number(rawValue);
+  const targetFolderId = rawValue === 'root' ? null : normalizeId(rawValue);
 
-  if (targetFolderId !== null && (!Number.isInteger(targetFolderId) || !state.folders.some((folder) => folder.id === targetFolderId))) {
+  if (targetFolderId !== null && !state.folders.some((folder) => folder.id === targetFolderId)) {
     setError('Invalid target folder.');
     return;
   }
@@ -693,7 +706,7 @@ function bindEvents() {
     const $target = $(e.currentTarget);
     $target.removeClass('vm-drag-over');
 
-    const targetFolderId = Number($target.data('folder-id'));
+    const targetFolderId = normalizeId($target.data('folder-id'));
     const dataStr = e.originalEvent.dataTransfer.getData('text/plain');
 
     if (!dataStr || !targetFolderId) return;
@@ -732,7 +745,7 @@ function bindEvents() {
     $target.removeClass('vm-drag-over');
 
     const rawId = $target.data('folder-id');
-    const targetFolderId = rawId === 'all' ? null : Number(rawId);
+    const targetFolderId = rawId === 'all' ? null : normalizeId(rawId);
     const dataStr = e.originalEvent.dataTransfer.getData('text/plain');
 
     if (!dataStr) return;
@@ -769,9 +782,9 @@ function bindEvents() {
   });
 
   $list.on('click', '[data-action="open-folder"]', (event) => {
-    const folderId = Number($(event.currentTarget).data('folder-id'));
+    const folderId = normalizeId($(event.currentTarget).data('folder-id'));
 
-    if (!Number.isInteger(folderId)) {
+    if (!isValidId(folderId)) {
       return;
     }
 
@@ -790,14 +803,14 @@ function bindEvents() {
   $list.on('change', '[data-action="toggle-folder-select"]', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const folderId = Number($(event.currentTarget).data('folder-id'));
+    const folderId = normalizeId($(event.currentTarget).data('folder-id'));
     toggleFolderSelection(folderId);
   });
 
   $list.on('change', '[data-action="toggle-bookmark-select"]', (event) => {
     event.preventDefault();
     event.stopPropagation();
-    const bookmarkId = Number($(event.currentTarget).data('bookmark-id'));
+    const bookmarkId = normalizeId($(event.currentTarget).data('bookmark-id'));
     toggleBookmarkSelection(bookmarkId);
   });
 
@@ -805,7 +818,7 @@ function bindEvents() {
     event.preventDefault();
     hideContextMenu();
 
-    const bookmarkId = Number($(event.currentTarget).data('id'));
+    const bookmarkId = normalizeId($(event.currentTarget).data('id'));
     const url = String($(event.currentTarget).data('url') ?? '').trim();
 
     if (!url) {
@@ -820,7 +833,7 @@ function bindEvents() {
     try {
       await openBookmarkUrl(url, state.openInNewTab);
 
-      if (Number.isInteger(bookmarkId)) {
+      if (isValidId(bookmarkId)) {
         await recordBookmarkClick(bookmarkId);
       }
 
@@ -841,9 +854,9 @@ function bindEvents() {
       return;
     }
 
-    const bookmarkId = Number($(event.currentTarget).data('id'));
+    const bookmarkId = normalizeId($(event.currentTarget).data('id'));
 
-    if (!Number.isInteger(bookmarkId)) {
+    if (!isValidId(bookmarkId)) {
       return;
     }
 
@@ -868,9 +881,9 @@ function bindEvents() {
     const $target = $(event.currentTarget);
 
     if ($target.hasClass('vm-folder-row')) {
-      const folderId = Number($target.data('folder-id'));
+      const folderId = normalizeId($target.data('folder-id'));
 
-      if (Number.isInteger(folderId)) {
+      if (isValidId(folderId)) {
         showContextMenu({
           type: 'folder',
           targetId: folderId,
@@ -882,9 +895,9 @@ function bindEvents() {
       return;
     }
 
-    const bookmarkId = Number($target.data('bookmark-id'));
+    const bookmarkId = normalizeId($target.data('bookmark-id'));
 
-    if (Number.isInteger(bookmarkId)) {
+    if (isValidId(bookmarkId)) {
       showContextMenu({
         type: 'bookmark',
         targetId: bookmarkId,
@@ -917,7 +930,7 @@ function bindEvents() {
     }
 
     const folderIdRaw = String($(event.currentTarget).data('folder-id'));
-    const folderId = folderIdRaw === 'all' ? null : Number(folderIdRaw);
+    const folderId = folderIdRaw === 'all' ? null : normalizeId(folderIdRaw);
     navigateToFolder(folderId);
   });
 
@@ -996,7 +1009,7 @@ function bindEvents() {
 
   $list.on('click', '[data-action="edit"]', (event) => {
     hideContextMenu();
-    const bookmarkId = Number($(event.currentTarget).data('id'));
+    const bookmarkId = normalizeId($(event.currentTarget).data('id'));
     const bookmark = state.bookmarks.find((item) => item.id === bookmarkId);
 
     if (bookmark) {
@@ -1006,7 +1019,7 @@ function bindEvents() {
 
   $list.on('click', '[data-action="delete"]', async (event) => {
     hideContextMenu();
-    const bookmarkId = Number($(event.currentTarget).data('id'));
+    const bookmarkId = normalizeId($(event.currentTarget).data('id'));
     const bookmark = state.bookmarks.find((item) => item.id === bookmarkId);
 
     if (!bookmark) {
@@ -1066,11 +1079,7 @@ function bindEvents() {
 
 function navigateToFolder(folderId) {
   hideContextMenu();
-  const parsedFolderId = folderId === null || folderId === undefined ? null : Number(folderId);
-
-  if (parsedFolderId !== null && !Number.isInteger(parsedFolderId)) {
-    return;
-  }
+  const parsedFolderId = normalizeId(folderId);
 
   state.currentFolderId = parsedFolderId;
   clearMultiSelection();
@@ -1651,7 +1660,7 @@ async function handleContextMenuAction(action) {
   const targetId = state.contextMenu.targetId;
   hideContextMenu();
 
-  if (!menuType || !Number.isInteger(targetId)) {
+  if (!menuType || !isValidId(targetId)) {
     return;
   }
 
@@ -1911,7 +1920,7 @@ async function saveBookmark() {
   const title = $editTitle.val().trim();
   const url = $editUrl.val().trim();
   const folderVal = $editFolderSelect.val();
-  const folderId = folderVal === 'null' ? null : Number(folderVal);
+  const folderId = folderVal === 'null' ? null : normalizeId(folderVal);
 
   if (!title || !url) {
     setError('Title and URL are required before saving.');

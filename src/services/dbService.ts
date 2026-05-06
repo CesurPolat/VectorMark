@@ -1,4 +1,5 @@
 import { db } from './dbCore';
+import { ulid } from 'ulid';
 import {
   normalizeIconData,
   normalizeIconPayload,
@@ -30,6 +31,8 @@ import type {
   SortDirection
 } from '../types';
 
+type EntityId = string;
+
 async function getOrCreateIconId(iconInput) {
   const normalizedIcon = normalizeIconInput(iconInput);
 
@@ -51,14 +54,19 @@ async function getOrCreateIconId(iconInput) {
     return existing.id;
   }
 
-  return await db.icons.add({
+  const iconId = ulid();
+
+  await db.icons.add({
+    id: iconId,
     data: normalizedIcon.data,
     hash: normalizedIcon.hash || ''
   });
+
+  return iconId;
 }
 
 async function deleteIconIfUnused(iconId) {
-  if (!Number.isInteger(iconId)) {
+  if (!isNonEmptyId(iconId)) {
     return false;
   }
 
@@ -116,13 +124,21 @@ function normalizeBookmarkFolderId(folderId) {
     return null;
   }
 
-  const parsed = Number(folderId);
+  const normalized = String(folderId).trim();
+  return normalized || null;
+}
 
-  if (!Number.isInteger(parsed) || parsed <= 0) {
+function normalizeEntityId(value) {
+  if (value === null || value === undefined) {
     return null;
   }
 
-  return parsed;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+function isNonEmptyId(value) {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function normalizeSortDirection(direction, fallback = 'desc') {
@@ -267,7 +283,10 @@ export async function addBookmarkWithIcon(title, url, folderId, data) {
       const iconId = await getOrCreateIconId(data);
       const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
 
-      const bookmarkId = await db.bookmarks.add({
+      const bookmarkId = ulid();
+
+      await db.bookmarks.add({
+        id: bookmarkId,
         title,
         url,
         folderId: normalizedFolderId,
@@ -313,7 +332,7 @@ export async function updateBookmark(bookmarkId, updates) {
       nextBookmark.createdAt = normalizeTimestamp(nextBookmark.createdAt, getNowTimestamp());
       nextBookmark.updatedAt = getNowTimestamp();
       nextBookmark.lastClickedAt = normalizeNullableTimestamp(nextBookmark.lastClickedAt);
-      nextBookmark.customOrder = normalizeCustomOrder(nextBookmark.customOrder, currentBookmark.id || 0);
+      nextBookmark.customOrder = normalizeCustomOrder(nextBookmark.customOrder, 0);
 
       delete nextBookmark.id;
 
@@ -435,19 +454,19 @@ function normalizeBookmarkRecord(record: Partial<BookmarkRecord> = {}): Bookmark
   const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
 
   return {
-    id: record.id,
+    id: String(record.id ?? ''),
     title: String(record.title ?? ''),
     url: String(record.url ?? ''),
     folderId: normalizeBookmarkFolderId(record.folderId),
-    iconId: Number.isInteger(record.iconId) ? Number(record.iconId) : null,
+    iconId: normalizeEntityId(record.iconId),
     createdAt,
     updatedAt,
     lastClickedAt: normalizeNullableTimestamp(record.lastClickedAt),
-    customOrder: normalizeCustomOrder(record.customOrder, Number(record.id) || 0)
+    customOrder: normalizeCustomOrder(record.customOrder, 0)
   };
 }
 
-async function getFolderBookmarkRecords(folderId: number | null = null, options: BookmarkQueryOptions = {}) {
+async function getFolderBookmarkRecords(folderId: string | null = null, options: BookmarkQueryOptions = {}) {
   const queryOptions = toQueryOptions(options);
 
   if (folderId === null) {
@@ -674,7 +693,10 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
       if (!bookmark) {
         const iconId = await getOrCreateIconId(normalizedIcon);
         const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
-        const bookmarkId = await db.bookmarks.add({
+        const bookmarkId = ulid();
+
+        await db.bookmarks.add({
+          id: bookmarkId,
           title,
           url,
           folderId: normalizedFolderId,
@@ -714,7 +736,7 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
         updates.customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
       }
 
-      if (Number.isInteger(iconId)) {
+      if (isNonEmptyId(iconId)) {
         updates.iconId = iconId;
       }
 
@@ -737,9 +759,9 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
 
 export async function recordBookmarkClick(bookmarkId) {
   try {
-    const parsedBookmarkId = Number(bookmarkId);
+    const parsedBookmarkId = normalizeEntityId(bookmarkId);
 
-    if (!Number.isInteger(parsedBookmarkId) || parsedBookmarkId <= 0) {
+    if (!parsedBookmarkId) {
       return false;
     }
 
@@ -816,9 +838,9 @@ function reorderByPosition(orderedIds, targetId, position = 'top') {
 
 export async function moveBookmarkInCustomOrder(bookmarkId, position = 'top') {
   try {
-    const parsedBookmarkId = Number(bookmarkId);
+    const parsedBookmarkId = normalizeEntityId(bookmarkId);
 
-    if (!Number.isInteger(parsedBookmarkId) || parsedBookmarkId <= 0) {
+    if (!parsedBookmarkId) {
       throw new Error('Invalid bookmark id.');
     }
 
@@ -883,8 +905,8 @@ export async function reorderBookmarksInScope(folderId, orderedBookmarkIds = [])
   try {
     const normalizedFolderId = normalizeBookmarkFolderId(folderId);
     const orderedIds = ensureArray(orderedBookmarkIds, 'orderedBookmarkIds')
-      .map((id) => Number(id))
-      .filter((id) => Number.isInteger(id) && id > 0);
+      .map((id) => normalizeEntityId(id))
+      .filter(Boolean);
 
     return await db.transaction('rw', db.bookmarks, async () => {
       const scopedBookmarks = normalizedFolderId === null
@@ -910,8 +932,8 @@ export async function reorderFoldersInScope(parentId, orderedFolderIds = []) {
   try {
     const normalizedParentId = normalizeParentId(parentId);
     const orderedIds = ensureArray(orderedFolderIds, 'orderedFolderIds')
-      .map((id) => Number(id))
-      .filter((id) => Number.isInteger(id) && id > 0);
+      .map((id) => normalizeEntityId(id))
+      .filter(Boolean);
 
     return await db.transaction('rw', db.folders, async () => {
       const siblings = await getFoldersByParentId(normalizedParentId);
@@ -951,17 +973,7 @@ function normalizeFolderName(name) {
 }
 
 function normalizeFolderId(folderId) {
-  if (folderId === null || folderId === undefined) {
-    return null;
-  }
-
-  const parsedFolderId = Number(folderId);
-
-  if (!Number.isInteger(parsedFolderId) || parsedFolderId <= 0) {
-    throw new Error('Invalid folder id.');
-  }
-
-  return parsedFolderId;
+  return normalizeEntityId(folderId);
 }
 
 function normalizeParentId(parentId) {
@@ -974,10 +986,11 @@ function normalizeFolderRecord(folder) {
 
   return {
     ...folder,
+    id: String(folder?.id ?? ''),
     parentId: normalizeParentId(folder.parentId),
     createdAt,
     updatedAt: normalizeTimestamp(folder?.updatedAt, createdAt),
-    customOrder: normalizeCustomOrder(folder?.customOrder, Number(folder?.id) || 0)
+    customOrder: normalizeCustomOrder(folder?.customOrder, 0)
   };
 }
 
@@ -1021,7 +1034,10 @@ export async function createFolder(name, parentId = null) {
 
       const customOrder = await getNextFolderCustomOrder(normalizedParentId);
 
-      const folderId = await db.folders.add({
+      const folderId = ulid();
+
+      await db.folders.add({
+        id: folderId,
         name: normalizedName,
         parentId: normalizedParentId,
         createdAt: now,
@@ -1236,8 +1252,8 @@ export async function deleteFolder(folderId, deleteRecursively = false) {
       }
 
       const allFolders = await db.folders.toArray();
-      const descendants = new Set<number>();
-      const queue: number[] = [parsedFolderId];
+      const descendants = new Set<string>();
+      const queue: string[] = [parsedFolderId];
 
       while (queue.length > 0) {
         const currentId = queue.shift();
@@ -1250,7 +1266,7 @@ export async function deleteFolder(folderId, deleteRecursively = false) {
         });
       }
 
-      const folderIdsToDelete: number[] = Array.from(descendants);
+      const folderIdsToDelete: string[] = Array.from(descendants);
 
       if (deleteRecursively) {
         // Alt klasörler ve içindeki bookmarkları kalıcı olarak sil
@@ -1354,7 +1370,7 @@ export async function updateFolder(folderId, updates) {
       }
 
       nextFolder.updatedAt = getNowTimestamp();
-      nextFolder.customOrder = normalizeCustomOrder(nextFolder.customOrder, current.id || 0);
+      nextFolder.customOrder = normalizeCustomOrder(nextFolder.customOrder, 0);
 
       await db.folders.put(nextFolder);
       return parsedFolderId;
@@ -1376,7 +1392,7 @@ export async function exportDatabase() {
         iconRows.map(async (icon) => {
           const normalizedIcon = normalizeIconData(icon);
 
-          if (!normalizedIcon || !Number.isInteger(Number(normalizedIcon.id))) {
+          if (!normalizedIcon || !isNonEmptyId(normalizedIcon.id)) {
             return null;
           }
 
@@ -1384,7 +1400,7 @@ export async function exportDatabase() {
           const hash = await ensureIconHash(data, normalizedIcon.hash ?? '');
 
           return {
-            id: Number(normalizedIcon.id),
+            id: String(normalizedIcon.id),
             data,
             hash: String(hash ?? '')
           };
@@ -1392,7 +1408,7 @@ export async function exportDatabase() {
       )).filter(Boolean);
 
       return {
-        version: 5,
+        version: 6,
         exportedAt: new Date().toISOString(),
         data: {
           folders,
@@ -1418,69 +1434,69 @@ export async function importDatabaseReplace(payload) {
 
     const folders = ensureArray(data?.folders, 'folders')
       .map((folder) => ({
-        id: Number(folder.id),
+        id: String(folder.id ?? '').trim() || ulid(),
         name: normalizeFolderName(folder.name),
         parentId: folder.parentId === null || folder.parentId === undefined
           ? null
-          : Number(folder.parentId),
+          : normalizeEntityId(folder.parentId),
         createdAt: normalizeTimestamp(folder.createdAt, now),
         updatedAt: normalizeTimestamp(folder.updatedAt, now),
-        customOrder: normalizeCustomOrder(folder.customOrder, Number(folder.id) || 0)
+        customOrder: normalizeCustomOrder(folder.customOrder, 0)
       }))
-      .filter((folder) => Number.isInteger(folder.id) && folder.name);
+      .filter((folder) => isNonEmptyId(folder.id) && folder.name);
 
     const folderIds = new Set(folders.map((folder) => folder.id));
 
     folders.forEach((folder) => {
-      if (!Number.isInteger(folder.parentId) || !folderIds.has(folder.parentId)) {
+      if (!folder.parentId || !folderIds.has(folder.parentId)) {
         folder.parentId = null;
       }
 
       folder.createdAt = normalizeTimestamp(folder.createdAt, now);
       folder.updatedAt = normalizeTimestamp(folder.updatedAt, folder.createdAt);
-      folder.customOrder = normalizeCustomOrder(folder.customOrder, folder.id);
+      folder.customOrder = normalizeCustomOrder(folder.customOrder, 0);
     });
 
     const icons = ensureArray(data?.icons, 'icons')
       .map((icon) => ({
-        id: Number(icon.id),
+        id: String(icon.id ?? '').trim() || ulid(),
         data: String(icon.data ?? icon.base64 ?? ''),
         hash: String(icon.hash ?? '')
       }))
-      .filter((icon) => Number.isInteger(icon.id));
+      .filter((icon) => isNonEmptyId(icon.id));
 
     const validFolderIds = new Set(folders.map((folder) => folder.id));
     const validIconIds = new Set(icons.map((icon) => icon.id));
 
     const bookmarks = ensureArray(data?.bookmarks, 'bookmarks')
       .map((bookmark) => {
-        const id = Number(bookmark.id);
+        const id = String(bookmark.id ?? '').trim() || ulid();
         const folderId = bookmark.folderId === null || bookmark.folderId === undefined
           ? null
-          : Number(bookmark.folderId);
+          : normalizeEntityId(bookmark.folderId);
         const iconId = bookmark.iconId === null || bookmark.iconId === undefined
           ? null
-          : Number(bookmark.iconId);
+          : normalizeEntityId(bookmark.iconId);
 
         return {
           id,
           title: String(bookmark.title ?? ''),
           url: String(bookmark.url ?? ''),
-          folderId: Number.isInteger(folderId) && validFolderIds.has(folderId) ? folderId : null,
-          iconId: Number.isInteger(iconId) && validIconIds.has(iconId) ? iconId : null,
+          folderId: folderId && validFolderIds.has(folderId) ? folderId : null,
+          iconId: iconId && validIconIds.has(iconId) ? iconId : null,
           createdAt: normalizeTimestamp(bookmark.createdAt, now),
           updatedAt: normalizeTimestamp(bookmark.updatedAt, now),
           lastClickedAt: normalizeNullableTimestamp(bookmark.lastClickedAt),
-          customOrder: normalizeCustomOrder(bookmark.customOrder, id)
+          customOrder: normalizeCustomOrder(bookmark.customOrder, 0)
         };
       })
-      .filter((bookmark) => Number.isInteger(bookmark.id) && bookmark.url);
+      .filter((bookmark) => isNonEmptyId(bookmark.id) && bookmark.url);
 
     bookmarks.forEach((bookmark) => {
       bookmark.createdAt = normalizeTimestamp(bookmark.createdAt, now);
       bookmark.updatedAt = normalizeTimestamp(bookmark.updatedAt, bookmark.createdAt);
       bookmark.lastClickedAt = normalizeNullableTimestamp(bookmark.lastClickedAt);
-      bookmark.customOrder = normalizeCustomOrder(bookmark.customOrder, bookmark.id);
+      bookmark.customOrder = normalizeCustomOrder(bookmark.customOrder, 0);
     });
 
     await db.transaction('rw', db.folders, db.icons, db.bookmarks, async () => {
@@ -1535,7 +1551,7 @@ export async function normalizeLegacyIconsToBase64(options: { onProgress?: ((pro
   reportProgress({ stage: 'start', processed: 0 });
 
   bookmarks.forEach((bookmark) => {
-    if (!Number.isInteger(bookmark.iconId)) {
+    if (!isNonEmptyId(bookmark.iconId)) {
       return;
     }
 
@@ -1699,7 +1715,7 @@ export async function normalizeLegacyIconsToBase64(options: { onProgress?: ((pro
     const referencedIconIds = new Set(
       (await db.bookmarks.toArray())
         .map((bookmark) => bookmark.iconId)
-        .filter((iconId) => Number.isInteger(iconId))
+        .filter((iconId) => isNonEmptyId(iconId))
     );
 
     const existingIcons = await db.icons.toArray();

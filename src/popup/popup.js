@@ -13,6 +13,15 @@ import { getSettings } from '../services/settingsService';
 
 let selectedFolderId = null;
 
+function normalizeId(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 $(document).ready(async function () {
   const source = await resolveSourceTabContext();
   const currentUrl = source.url;
@@ -78,7 +87,7 @@ $(document).ready(async function () {
     const id = $(this).data("id");
     const name = $(this).find("span:last").text();
 
-    selectedFolderId = (id === "null" || id === null) ? null : Number(id);
+    selectedFolderId = (id === "null" || id === null) ? null : normalizeId(id);
 
     // Update UI
     $("#folder-list-container .dropdown-item").removeClass("is-active");
