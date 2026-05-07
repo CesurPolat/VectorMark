@@ -1,4 +1,4 @@
-import type { PartialSettingsInput, Settings, ViewMode, IconStorageMode, BookmarkSortBy, FolderSortBy, SortDirection } from '../types';
+import type { PartialSettingsInput, Settings, ViewMode, IconStorageMode, SortDirection, SortFields } from '../types';
 
 const DEFAULT_SETTINGS: Settings = {
   openInNewTab: false,
@@ -37,9 +37,9 @@ function normalizeSettings(raw: PartialSettingsInput = {}): Settings {
     pageSize: clampPageSize(raw.pageSize),
     viewMode,
     iconStorageMode,
-    bookmarkSortBy: (bookmarkSortBy || DEFAULT_SETTINGS.bookmarkSortBy) as BookmarkSortBy,
+    bookmarkSortBy: (bookmarkSortBy || DEFAULT_SETTINGS.bookmarkSortBy) as SortFields,
     bookmarkSortDir,
-    folderSortBy: (folderSortBy || DEFAULT_SETTINGS.folderSortBy) as FolderSortBy,
+    folderSortBy: (folderSortBy || DEFAULT_SETTINGS.folderSortBy) as SortFields,
     folderSortDir,
     manualOrderEnabled: raw.manualOrderEnabled === true
   };

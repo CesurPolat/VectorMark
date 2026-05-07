@@ -16,7 +16,6 @@ import {
   recordBookmarkClick,
   moveBookmarkInCustomOrder,
   moveFolderInCustomOrder,
-  saveOrUpdateBookmarkByUrl,
   resolveBookmarkIconPayload
 } from '../services/dbService';
 

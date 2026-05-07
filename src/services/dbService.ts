@@ -212,36 +212,6 @@ async function getFoldersByParentId(parentId = null) {
 }
 
 //TODO: CRUD Bookmark
-// Add a bookmark with a new icon
-export async function addBookmarkWithIcon(title, url, folderId, data) {
-  try {
-    return await db.transaction('rw', db.icons, db.bookmarks, async () => {
-      const now = Date.now();
-      const normalizedFolderId = normalizeBookmarkFolderId(folderId);
-      const iconId = await getOrCreateIconId(data);
-      const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
-
-      const bookmarkId = ulid();
-
-      await db.bookmarks.add({
-        id: bookmarkId,
-        title,
-        url,
-        folderId: normalizedFolderId,
-        iconId,
-        createdAt: now,
-        updatedAt: now,
-        lastClickedAt: null,
-        customOrder
-      });
-
-      return bookmarkId;
-    });
-  } catch (error) {
-    console.error('Error adding bookmark with icon:', error);
-    throw error;
-  }
-}
 
 export async function updateBookmark(bookmarkId, updates) {
   try {
@@ -404,35 +374,6 @@ export async function deleteBookmarkByUrl(url) {
     });
   } catch (error) {
     console.error('Error deleting bookmark by url:', error);
-    throw error;
-  }
-}
-
-// List all bookmarks with their icons
-export async function listBookmarksWithIcons(folderId = null) {
-  try {
-    return await db.transaction('r', db.bookmarks, db.icons, async () => {
-      const bookmarks = folderId === null
-        ? await db.bookmarks.toArray()
-        : await db.bookmarks.where('folderId').equals(folderId).toArray();
-
-      const result = await Promise.all(
-        bookmarks.map(async (bookmark) => {
-          const icon = bookmark.iconId
-            ? await db.icons.get(bookmark.iconId)
-            : null;
-
-          return {
-            ...bookmark,
-            icon
-          };
-        })
-      );
-
-      return result;
-    });
-  } catch (error) {
-    console.error('Error listing bookmarks with icons:', error);
     throw error;
   }
 }
@@ -631,27 +572,6 @@ export async function searchBookmarksPage(query, folderId = null, offset = 0, li
   }
 }
 
-export async function searchBookmarks(query, folderId = null) {
-  try {
-    const normalizedQuery = (query ?? '').trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return await listBookmarksWithIcons(folderId);
-    }
-
-    const bookmarks = await listBookmarksWithIcons(folderId);
-
-    return bookmarks.filter((bookmark) => {
-      const title = (bookmark.title ?? '').toLowerCase();
-      const url = (bookmark.url ?? '').toLowerCase();
-
-      return title.includes(normalizedQuery) || url.includes(normalizedQuery);
-    });
-  } catch (error) {
-    console.error('Error searching bookmarks:', error);
-    throw error;
-  }
-}
 
 export async function isUrlExist(url) {
   try {
