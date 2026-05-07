@@ -37,41 +37,6 @@ import {
   escapeAttr
 } from './sidepanel-utils';
 
-const state = {
-  bookmarks: [],
-  folders: [],
-  currentFolderId: null,
-  loading: true,
-  error: null,
-  query: '',
-  selectedBookmark: null,
-  selectedBookmarkIds: new Set(),
-  selectedFolderIds: new Set(),
-  multiSelectEnabled: false,
-  activeDrawer: null,
-  settingsBusy: false,
-  pageSize: 40,
-  openInNewTab: true,
-  viewMode: 'list',
-  iconStorageMode: 'base64',
-  bookmarkSortBy: 'updatedAt',
-  bookmarkSortDir: 'desc',
-  folderSortBy: 'name',
-  folderSortDir: 'asc',
-  totalBookmarks: 0,
-  hasMore: true,
-  loadingMore: false,
-  requestToken: 0,
-  contextMenu: {
-    isOpen: false,
-    type: null,
-    targetId: null,
-    x: 0,
-    y: 0
-  },
-  moveModalOpen: false
-};
-
 function normalizeId(value) {
   if (value === null || value === undefined) {
     return null;
@@ -108,9 +73,6 @@ let $drawerSave;
 let $drawerClose;
 let $drawerCancel;
 let $loadingMoreState;
-let $openNewTabToggle;
-let $pageSizeSelect;
-let $iconStorageModeSelect;
 let $sharedSortSelect;
 let $viewModeChip;
 let $multiSelectChip;
@@ -126,6 +88,41 @@ let $moveModalClose;
 let $moveModalCancel;
 let $moveModalSubmit;
 let $moveTargetFolderSelect;
+
+const state = {
+  bookmarks: [],
+  folders: [],
+  currentFolderId: null,
+  loading: true,
+  error: null,
+  query: '',
+  selectedBookmark: null,
+  selectedBookmarkIds: new Set(),
+  selectedFolderIds: new Set(),
+  multiSelectEnabled: false,
+  activeDrawer: null,
+  settingsBusy: false,
+  pageSize: 40,
+  openInNewTab: true,
+  viewMode: 'list',
+  iconStorageMode: 'base64',
+  bookmarkSortBy: 'updatedAt',
+  bookmarkSortDir: 'desc',
+  folderSortBy: 'name',
+  folderSortDir: 'asc',
+  totalBookmarks: 0,
+  hasMore: true,
+  loadingMore: false,
+  requestToken: 0,
+  contextMenu: {
+    isOpen: false,
+    type: null,
+    targetId: null,
+    x: 0,
+    y: 0
+  },
+  moveModalOpen: false
+};
 
 $(document).ready(async () => {
   cacheDom();
@@ -283,17 +280,6 @@ async function persistSettings() {
 }
 
 function syncSettingsControls() {
-  if ($openNewTabToggle) {
-    $openNewTabToggle.prop('checked', state.openInNewTab);
-  }
-
-  if ($pageSizeSelect) {
-    $pageSizeSelect.val(String(state.pageSize));
-  }
-
-  if ($iconStorageModeSelect) {
-    $iconStorageModeSelect.val(state.iconStorageMode === 'url' ? 'url' : 'base64');
-  }
 
   if ($sharedSortSelect) {
     $sharedSortSelect.val(toSharedSortSelectionValue());
@@ -338,9 +324,6 @@ function cacheDom() {
   $drawerClose = $('#drawer-close');
   $drawerCancel = $('#drawer-cancel');
   $loadingMoreState = $('#loading-more-state');
-  $openNewTabToggle = $('#open-new-tab-toggle');
-  $pageSizeSelect = $('#page-size-select');
-  $iconStorageModeSelect = $('#icon-storage-mode-select');
   $sharedSortSelect = $('#shared-sort-select');
   $viewModeChip = $('#view-mode-chip');
   $multiSelectChip = $('#multi-select-chip');
@@ -912,56 +895,6 @@ function bindEvents() {
   $fullscreenToggleBtn.on('click', toggleFullscreenMode);
   $panelCloseBtn.on('click', closePanelWindow);
 
-  $openNewTabToggle.on('change', async () => {
-    const nextOpenInNewTab = $openNewTabToggle.prop('checked');
-    state.openInNewTab = nextOpenInNewTab;
-
-    try {
-      await persistSettings();
-
-      render();
-    } catch (error) {
-      console.error('Error saving openInNewTab setting:', error);
-      state.openInNewTab = !nextOpenInNewTab;
-      syncSettingsControls();
-    }
-  });
-
-  $pageSizeSelect.on('change', async () => {
-    const nextPageSize = Number($pageSizeSelect.val());
-
-    if (!Number.isFinite(nextPageSize)) {
-      return;
-    }
-
-    const previousPageSize = state.pageSize;
-    state.pageSize = Math.min(250, Math.max(1, Math.floor(nextPageSize)));
-
-    try {
-      await persistSettings();
-
-      await loadBookmarks();
-    } catch (error) {
-      console.error('Error saving page size setting:', error);
-      state.pageSize = previousPageSize;
-      $pageSizeSelect.val(String(previousPageSize));
-    }
-  });
-
-  $iconStorageModeSelect.on('change', async () => {
-    const nextMode = String($iconStorageModeSelect.val() ?? '').trim() === 'url' ? 'url' : 'base64';
-    const previousMode = state.iconStorageMode;
-    state.iconStorageMode = nextMode;
-
-    try {
-      await persistSettings();
-    } catch (error) {
-      console.error('Error saving icon storage mode:', error);
-      state.iconStorageMode = previousMode;
-      syncSettingsControls();
-    }
-  });
-
   $list.on('click', '[data-action="edit"]', (event) => {
     hideContextMenu();
     const bookmarkId = normalizeId($(event.currentTarget).data('id'));
@@ -1107,6 +1040,7 @@ async function loadFolders() {
   }
 }
 
+//TODO: combine with loadBookmarks and unify pagination and error handling logic
 async function loadBookmarks() {
   const requestToken = ++state.requestToken;
   state.loading = true;
@@ -1158,6 +1092,9 @@ async function loadMoreBookmarks() {
   }
 
   const requestToken = ++state.requestToken;
+
+  console.log('Loading more bookmarks...', requestToken, 'current token:', state.requestToken);
+
   state.loadingMore = true;
   state.error = null;
   render();
