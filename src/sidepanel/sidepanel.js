@@ -88,7 +88,6 @@ function isValidId(value) {
 
 let $searchInput;
 let $count;
-let $status;
 let $list;
 let $listWrap;
 let $breadcrumb;
@@ -102,7 +101,6 @@ let $errorState;
 let $errorMessage;
 let $drawer;
 let $drawerBackdrop;
-let $settingsDrawer;
 let $drawerTitle;
 let $editTitle;
 let $editUrl;
@@ -110,18 +108,6 @@ let $editFolderSelect;
 let $drawerSave;
 let $drawerClose;
 let $drawerCancel;
-let $settingsClose;
-let $settingsCancel;
-let $settingsStatus;
-let $dbExportBtn;
-let $dbImportBtn;
-let $dbImportInput;
-let $bookmarkImportChromeBtn;
-let $bookmarkImportJsonBtn;
-let $bookmarkImportHtmlBtn;
-let $bookmarkJsonInput;
-let $bookmarkHtmlInput;
-let $normalizeIconsBtn;
 let $loadingMoreState;
 let $openNewTabToggle;
 let $pageSizeSelect;
@@ -332,7 +318,6 @@ function syncSettingsControls() {
 function cacheDom() {
   $searchInput = $('#bookmark-search');
   $count = $('#bookmark-count');
-  $status = $('#bookmark-status');
   $list = $('#bookmarks-list');
   $listWrap = $('#bookmark-scroll-wrap');
   $breadcrumb = $('#folder-breadcrumb');
@@ -346,7 +331,6 @@ function cacheDom() {
   $errorMessage = $('#error-message');
   $drawer = $('#bookmark-drawer');
   $drawerBackdrop = $('#drawer-backdrop');
-  $settingsDrawer = $('#settings-drawer');
   $drawerTitle = $('#drawer-title');
   $editTitle = $('#edit-title');
   $editUrl = $('#edit-url');
@@ -354,18 +338,6 @@ function cacheDom() {
   $drawerSave = $('#drawer-save');
   $drawerClose = $('#drawer-close');
   $drawerCancel = $('#drawer-cancel');
-  $settingsClose = $('#settings-close');
-  $settingsCancel = $('#settings-cancel');
-  $settingsStatus = $('#settings-status');
-  $dbExportBtn = $('#db-export-btn');
-  $dbImportBtn = $('#db-import-btn');
-  $dbImportInput = $('#db-import-input');
-  $bookmarkImportChromeBtn = $('#bookmark-import-chrome-btn');
-  $bookmarkImportJsonBtn = $('#bookmark-import-json-btn');
-  $bookmarkImportHtmlBtn = $('#bookmark-import-html-btn');
-  $bookmarkJsonInput = $('#bookmark-json-input');
-  $bookmarkHtmlInput = $('#bookmark-html-input');
-  $normalizeIconsBtn = $('#normalize-icons-btn');
   $loadingMoreState = $('#loading-more-state');
   $openNewTabToggle = $('#open-new-tab-toggle');
   $pageSizeSelect = $('#page-size-select');
@@ -438,7 +410,6 @@ async function toggleViewMode() {
   try {
     await persistSettings();
     render();
-    setStatus(`View mode: ${state.viewMode === 'grid' ? 'Grid' : 'List'}.`);
   } catch (error) {
     console.error('Error saving view mode setting:', error);
     state.viewMode = previousMode;
@@ -464,14 +435,12 @@ async function handleBulkOpenSelected() {
   const selectedIds = Array.from(state.selectedBookmarkIds);
 
   if (selectedIds.length === 0) {
-    setStatus('No bookmarks selected to open.');
     return;
   }
 
   const selectedBookmarks = state.bookmarks.filter((bookmark) => state.selectedBookmarkIds.has(bookmark.id));
 
   if (selectedBookmarks.length === 0) {
-    setStatus('Select bookmarks from the current list before opening.');
     return;
   }
 
@@ -480,8 +449,6 @@ async function handleBulkOpenSelected() {
       await openBookmarkUrl(bookmark.url, true);
       await recordBookmarkClick(bookmark.id);
     }
-
-    setStatus(`Opened ${selectedBookmarks.length} bookmark(s).`);
 
     if (state.bookmarkSortBy === 'lastClickedAt') {
       await loadBookmarks();
@@ -496,7 +463,6 @@ async function handleBulkMoveSelected() {
   const selectedCount = getSelectedCount();
 
   if (selectedCount === 0) {
-    setStatus('No selected items to move.');
     return;
   }
 
@@ -563,7 +529,6 @@ async function submitMoveModal() {
     clearMultiSelection();
     await loadFolders();
     await loadBookmarks();
-    setStatus('Selected items moved.');
   } catch (error) {
     console.error('Error moving selected items:', error);
     setError(error?.message || 'Unable to move selected items.');
@@ -575,7 +540,6 @@ async function handleBulkDeleteSelected() {
   const folderIds = Array.from(state.selectedFolderIds);
 
   if (bookmarkIds.length === 0 && folderIds.length === 0) {
-    setStatus('No selected items to delete.');
     return;
   }
 
@@ -599,7 +563,6 @@ async function handleBulkDeleteSelected() {
     clearMultiSelection();
     await loadFolders();
     await loadBookmarks();
-    setStatus('Selected items deleted.');
   } catch (error) {
     console.error('Error deleting selected items:', error);
     setError(error?.message || 'Unable to delete selected items.');
@@ -940,7 +903,6 @@ function bindEvents() {
       await persistSettings();
       await loadFolders();
       await loadBookmarks();
-      setStatus('Sort updated.');
     } catch (error) {
       console.error('Error saving shared sort:', error);
       setError('Could not save shared sort setting.');
@@ -959,10 +921,8 @@ function bindEvents() {
       await persistSettings();
 
       render();
-      setSettingsStatus('Behavior setting saved.', false);
     } catch (error) {
       console.error('Error saving openInNewTab setting:', error);
-      setSettingsStatus('Could not save link behavior.', true);
       state.openInNewTab = !nextOpenInNewTab;
       syncSettingsControls();
     }
@@ -982,12 +942,10 @@ function bindEvents() {
       await persistSettings();
 
       await loadBookmarks();
-      setSettingsStatus('Page size updated.', false);
     } catch (error) {
       console.error('Error saving page size setting:', error);
       state.pageSize = previousPageSize;
       $pageSizeSelect.val(String(previousPageSize));
-      setSettingsStatus('Could not save page size.', true);
     }
   });
 
@@ -998,12 +956,10 @@ function bindEvents() {
 
     try {
       await persistSettings();
-      setSettingsStatus('Icon storage mode saved.', false);
     } catch (error) {
       console.error('Error saving icon storage mode:', error);
       state.iconStorageMode = previousMode;
       syncSettingsControls();
-      setSettingsStatus('Could not save icon storage mode.', true);
     }
   });
 
@@ -1027,7 +983,6 @@ function bindEvents() {
     }
 
     try {
-      setStatus('Deleting bookmark...');
       await handleDeleteBookmark(bookmark);
     } catch (error) {
       console.error('Error deleting bookmark:', error);
@@ -1043,17 +998,6 @@ function bindEvents() {
       closeDrawer();
     }
   });
-
-  $dbExportBtn.on('click', handleDbExport);
-  $dbImportBtn.on('click', () => $dbImportInput.trigger('click'));
-  $dbImportInput.on('change', handleDbImportChange);
-
-  $bookmarkImportChromeBtn.on('click', handleChromeBookmarkImport);
-  $bookmarkImportJsonBtn.on('click', () => $bookmarkJsonInput.trigger('click'));
-  $bookmarkJsonInput.on('change', handleBookmarkJsonImportChange);
-  $bookmarkImportHtmlBtn.on('click', () => $bookmarkHtmlInput.trigger('click'));
-  $bookmarkHtmlInput.on('change', handleBookmarkHtmlImportChange);
-  $normalizeIconsBtn.on('click', handleNormalizeIcons);
 
   $(document).on('keydown', (event) => {
     if (event.key === 'Escape') {
@@ -1363,7 +1307,6 @@ function render() {
   const selectedCount = getSelectedCount();
 
   $count.text(state.totalBookmarks);
-  $status.text(getStatusLabel());
   renderBreadcrumb();
 
   $list.removeClass('vm-list-mode-list vm-list-mode-grid');
@@ -1690,21 +1633,17 @@ async function handleContextMenuAction(action) {
 
       if (action === 'copy-url') {
         await copyTextToClipboard(bookmark.url);
-        setStatus('Bookmark URL copied.');
         return;
       }
 
       if (action === 'copy-title') {
         await copyTextToClipboard(bookmark.title);
-        setStatus('Bookmark title copied.');
         return;
       }
 
       if (action === 'move-bookmark-top' || action === 'move-bookmark-bottom') {
         const position = action === 'move-bookmark-top' ? 'top' : 'bottom';
         await moveBookmarkInCustomOrder(bookmark.id, position);
-
-        setStatus('Custom order updated.');
 
         await loadBookmarks();
         return;
@@ -1744,8 +1683,6 @@ async function handleContextMenuAction(action) {
     if (action === 'move-folder-top' || action === 'move-folder-bottom') {
       const position = action === 'move-folder-top' ? 'top' : 'bottom';
       await moveFolderInCustomOrder(folder.id, position);
-
-      setStatus('Custom order updated.');
 
       await loadFolders();
       render();
@@ -1904,7 +1841,6 @@ async function toggleFullscreenMode() {
     closePanelWindow();
   } catch (error) {
     console.error('Failed to open side panel as a tab:', error);
-    setStatus('Could not open side panel in a new tab.');
   }
 }
 
@@ -1926,8 +1862,6 @@ async function saveBookmark() {
     setError('Title and URL are required before saving.');
     return;
   }
-
-  setStatus('Saving bookmark...');
 
   try {
     await updateBookmark(state.selectedBookmark.id, {
@@ -1953,315 +1887,20 @@ async function createFolderFromInput() {
     return;
   }
 
-  setStatus('Creating folder...');
-
   try {
     const folder = await createFolder(folderName, state.currentFolderId);
     $inlineInput.val('');
     await loadFolders();
     state.currentFolderId = folder.id;
     await loadBookmarks();
-    setStatus(`Folder "${folder.name}" created.`);
   } catch (error) {
     console.error('Error creating folder:', error);
     setError(error?.message || 'Unable to create folder.');
   }
 }
 
-function setStatus(message) {
-  state.error = null;
-  $status.text(message);
-  $errorState.addClass('is-hidden');
-}
-
 function setError(message) {
   state.error = message;
   $errorMessage.text(message);
   render();
-}
-
-function setSettingsStatus(message, isError = false) {
-  if (!$settingsStatus) {
-    return;
-  }
-
-  $settingsStatus.text(message || '');
-  $settingsStatus.css('color', isError ? '#ffb1b1' : '');
-}
-
-function setSettingsBusy(isBusy) {
-  state.settingsBusy = isBusy;
-  $dbExportBtn.prop('disabled', isBusy);
-  $dbImportBtn.prop('disabled', isBusy);
-  $bookmarkImportChromeBtn.prop('disabled', isBusy);
-  $bookmarkImportJsonBtn.prop('disabled', isBusy);
-  $bookmarkImportHtmlBtn.prop('disabled', isBusy);
-  $normalizeIconsBtn.prop('disabled', isBusy);
-  $openNewTabToggle.prop('disabled', isBusy);
-  $pageSizeSelect.prop('disabled', isBusy);
-  $iconStorageModeSelect.prop('disabled', isBusy);
-}
-
-async function handleDbExport() {
-  setSettingsBusy(true);
-  setSettingsStatus('Preparing DB export...', false);
-
-  try {
-    const payload = await exportDatabase();
-    const filename = `vectormark-db-${new Date().toISOString().replaceAll(':', '-').split('.')[0]}.json`;
-    downloadTextFile(filename, JSON.stringify(payload, null, 2), 'application/json');
-    setSettingsStatus('DB export completed.', false);
-  } catch (error) {
-    console.error('DB export failed:', error);
-    setSettingsStatus(error?.message || 'DB export failed.', true);
-  } finally {
-    setSettingsBusy(false);
-  }
-}
-
-async function handleDbImportChange(event) {
-  const file = event.target.files?.[0];
-  $dbImportInput.val('');
-
-  if (!file) {
-    return;
-  }
-
-  const confirmed = window.confirm('DB import replace will delete current saved data. Continue?');
-
-  if (!confirmed) {
-    return;
-  }
-
-  setSettingsBusy(true);
-  setSettingsStatus('Importing DB...', false);
-
-  try {
-    const text = await file.text();
-    const result = await importDatabaseReplace(text);
-    await loadAll();
-    closeDrawer();
-    setSettingsStatus(`DB imported. Folders: ${result.folders}, Bookmarks: ${result.bookmarks}.`, false);
-  } catch (error) {
-    console.error('DB import failed:', error);
-    setSettingsStatus(error?.message || 'DB import failed.', true);
-  } finally {
-    setSettingsBusy(false);
-  }
-}
-
-async function handleChromeBookmarkImport() {
-  setSettingsBusy(true);
-  setSettingsStatus('Reading Chrome bookmarks...', false);
-
-  try {
-    const tree = await getChromeBookmarkTree();
-    const parsed = flattenChromeBookmarkTree(tree);
-    const result = await importNormalizedBookmarks(parsed);
-    await loadAll();
-    setSettingsStatus(`Chrome import done. Created: ${result.created}, Updated: ${result.updated}, Skipped: ${result.skipped}.`, false);
-  } catch (error) {
-    console.error('Chrome import failed:', error);
-    setSettingsStatus(error?.message || 'Chrome import failed.', true);
-  } finally {
-    setSettingsBusy(false);
-  }
-}
-
-async function handleBookmarkJsonImportChange(event) {
-  const file = event.target.files?.[0];
-  $bookmarkJsonInput.val('');
-
-  if (!file) {
-    return;
-  }
-
-  setSettingsBusy(true);
-  setSettingsStatus('Importing bookmarks from JSON...', false);
-
-  try {
-    const raw = JSON.parse(await file.text());
-    const parsed = parseBookmarkJsonImport(raw);
-    const result = await importNormalizedBookmarks(parsed);
-    await loadAll();
-    setSettingsStatus(`JSON import done. Created: ${result.created}, Updated: ${result.updated}, Skipped: ${result.skipped}.`, false);
-  } catch (error) {
-    console.error('JSON import failed:', error);
-    setSettingsStatus(error?.message || 'JSON import failed.', true);
-  } finally {
-    setSettingsBusy(false);
-  }
-}
-
-async function handleBookmarkHtmlImportChange(event) {
-  const file = event.target.files?.[0];
-  $bookmarkHtmlInput.val('');
-
-  if (!file) {
-    return;
-  }
-
-  setSettingsBusy(true);
-  setSettingsStatus('Importing bookmarks from Netscape HTML...', false);
-
-  try {
-    const html = await file.text();
-    const parsed = parseNetscapeBookmarkHtml(html);
-    const result = await importNormalizedBookmarks(parsed);
-    await loadAll();
-    setSettingsStatus(`HTML import done. Created: ${result.created}, Updated: ${result.updated}, Skipped: ${result.skipped}.`, false);
-  } catch (error) {
-    console.error('HTML import failed:', error);
-    setSettingsStatus(error?.message || 'HTML import failed.', true);
-  } finally {
-    setSettingsBusy(false);
-  }
-}
-
-async function handleNormalizeIcons() {
-  const modeLabel = state.iconStorageMode === 'url' ? 'URL + hash' : 'Base64';
-  const confirmed = window.confirm(`Normalize icons will use ${modeLabel} mode, merge duplicates, and remove unused icon rows. Continue?`);
-
-  if (!confirmed) {
-    return;
-  }
-
-  setSettingsBusy(true);
-  setSettingsStatus(`Normalizing icons (${modeLabel})...`, false);
-
-  try {
-    let lastProgressRenderAt = 0;
-
-    const summary = await normalizeLegacyIconsToBase64({
-      storageMode: state.iconStorageMode,
-      onProgress: (progress) => {
-        const now = Date.now();
-
-        if (progress.stage !== 'done' && now - lastProgressRenderAt < 120) {
-          return;
-        }
-
-        lastProgressRenderAt = now;
-
-        if (progress.stage === 'convert') {
-          setSettingsStatus(
-            `Normalizing icons... ${progress.processed}/${progress.total} processed${progress.failed ? `, failed: ${progress.failed}` : ''}`,
-            false
-          );
-          return;
-        }
-
-        if (progress.stage === 'merge') {
-          setSettingsStatus('Normalizing icons... merging duplicates and updating references...', false);
-          return;
-        }
-
-        if (progress.stage === 'start') {
-          setSettingsStatus('Normalizing icons... preparing data...', false);
-        }
-      }
-    });
-
-    await loadBookmarks();
-
-    setSettingsStatus(
-      `Icon normalization done. Total: ${summary.total}, Converted: ${summary.converted}, Reattached: ${summary.reattached}, Detached: ${summary.detached}, Deleted: ${summary.deleted}, Failed: ${summary.failed}.`,
-      false
-    );
-  } catch (error) {
-    console.error('Icon normalization failed:', error);
-    setSettingsStatus(error?.message || 'Icon normalization failed.', true);
-  } finally {
-    setSettingsBusy(false);
-  }
-}
-
-
-async function importNormalizedBookmarks(items) {
-  const folderMap = new Map();
-  const iconDataByDomain = new Map();
-
-  const existingFolders = await listFolders();
-  existingFolders.forEach((folder) => {
-    folderMap.set(folderMapKey(folder.parentId ?? null, folder.name), folder.id);
-  });
-
-  const summary = {
-    created: 0,
-    updated: 0,
-    skipped: 0,
-    errors: 0
-  };
-
-  for (const item of items) {
-    const url = String(item.url ?? '').trim();
-
-    if (!url || !/^https?:/i.test(url)) {
-      summary.skipped += 1;
-      continue;
-    }
-
-    const title = String(item.title ?? '').trim() || url;
-    const folderPath = String(item.folderPath ?? '').trim();
-    const folderId = await resolveFolderId(folderPath, folderMap);
-    const iconPayload = await resolveBookmarkIconPayload(url, '', {
-      domainCache: iconDataByDomain,
-      storageMode: state.iconStorageMode,
-      skipPageHtmlLookup: true
-    });
-
-    try {
-      const result = await saveOrUpdateBookmarkByUrl(
-        title,
-        url,
-        folderId,
-        iconPayload
-      );
-
-      if (result.action === 'created') {
-        summary.created += 1;
-      } else {
-        summary.updated += 1;
-      }
-    } catch (error) {
-      console.error('Error importing bookmark:', error, item);
-      summary.errors += 1;
-    }
-  }
-
-  return summary;
-}
-
-async function resolveFolderId(folderPath, folderMap) {
-  const normalizedPath = String(folderPath ?? '').trim();
-
-  if (!normalizedPath) {
-    return null;
-  }
-
-  const segments = normalizedPath
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  if (segments.length === 0) {
-    return null;
-  }
-
-  let parentId = null;
-
-  for (const segment of segments) {
-    const key = folderMapKey(parentId, segment);
-
-    if (folderMap.has(key)) {
-      parentId = folderMap.get(key);
-      continue;
-    }
-
-    const folder = await createFolder(segment, parentId);
-    folderMap.set(key, folder.id);
-    parentId = folder.id;
-  }
-
-  return parentId;
 }

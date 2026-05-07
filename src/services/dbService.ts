@@ -211,6 +211,7 @@ async function getFoldersByParentId(parentId = null) {
   return await db.folders.where('parentId').equals(parentId).toArray();
 }
 
+//TODO: CRUD Bookmark
 // Add a bookmark with a new icon
 export async function addBookmarkWithIcon(title, url, folderId, data) {
   try {
@@ -279,6 +280,84 @@ export async function updateBookmark(bookmarkId, updates) {
     });
   } catch (error) {
     console.error('Error updating bookmark:', error);
+    throw error;
+  }
+}
+
+export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
+  try {
+    return await db.transaction('rw', db.bookmarks, db.icons, async () => {
+      const now = Date.now();
+      const normalizedIcon = normalizeIconInput(data);
+      const normalizedFolderId = normalizeBookmarkFolderId(folderId);
+      const bookmark = await db.bookmarks
+        .where('url')
+        .equals(url)
+        .first();
+
+      if (!bookmark) {
+        const iconId = await getOrCreateIconId(normalizedIcon);
+        const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
+        const bookmarkId = ulid();
+
+        await db.bookmarks.add({
+          id: bookmarkId,
+          title,
+          url,
+          folderId: normalizedFolderId,
+          iconId,
+          createdAt: now,
+          updatedAt: now,
+          lastClickedAt: null,
+          customOrder
+        });
+
+        return {
+          bookmarkId,
+          action: 'created'
+        };
+      }
+
+      let iconId = bookmark.iconId;
+      let previousIconIdToCleanup = null;
+
+      if (normalizedIcon) {
+        const nextIconId = await getOrCreateIconId(normalizedIcon);
+
+        if (nextIconId && iconId !== nextIconId) {
+          const previousIconId = iconId;
+          iconId = nextIconId;
+          previousIconIdToCleanup = previousIconId;
+        }
+      }
+
+      const updates: Partial<BookmarkRecord> = {
+        title,
+        updatedAt: now
+      };
+
+      if (normalizedFolderId !== bookmark.folderId) {
+        updates.folderId = normalizedFolderId;
+        updates.customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
+      }
+
+      if (iconId != null) {
+        updates.iconId = iconId;
+      }
+
+      await db.bookmarks.update(bookmark.id, updates);
+
+      if (previousIconIdToCleanup) {
+        await deleteIconIfUnused(previousIconIdToCleanup);
+      }
+
+      return {
+        bookmarkId: bookmark.id,
+        action: 'updated'
+      };
+    });
+  } catch (error) {
+    console.error('Error saving or updating bookmark by url:', error);
     throw error;
   }
 }
@@ -598,83 +677,7 @@ export async function getBookmarkByUrl(url) {
   }
 }
 
-export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
-  try {
-    return await db.transaction('rw', db.bookmarks, db.icons, async () => {
-      const now = Date.now();
-      const normalizedIcon = normalizeIconInput(data);
-      const normalizedFolderId = normalizeBookmarkFolderId(folderId);
-      const bookmark = await db.bookmarks
-        .where('url')
-        .equals(url)
-        .first();
 
-      if (!bookmark) {
-        const iconId = await getOrCreateIconId(normalizedIcon);
-        const customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
-        const bookmarkId = ulid();
-
-        await db.bookmarks.add({
-          id: bookmarkId,
-          title,
-          url,
-          folderId: normalizedFolderId,
-          iconId,
-          createdAt: now,
-          updatedAt: now,
-          lastClickedAt: null,
-          customOrder
-        });
-
-        return {
-          bookmarkId,
-          action: 'created'
-        };
-      }
-
-      let iconId = bookmark.iconId;
-      let previousIconIdToCleanup = null;
-
-      if (normalizedIcon) {
-        const nextIconId = await getOrCreateIconId(normalizedIcon);
-
-        if (nextIconId && iconId !== nextIconId) {
-          const previousIconId = iconId;
-          iconId = nextIconId;
-          previousIconIdToCleanup = previousIconId;
-        }
-      }
-
-      const updates: Partial<BookmarkRecord> = {
-        title,
-        updatedAt: now
-      };
-
-      if (normalizedFolderId !== bookmark.folderId) {
-        updates.folderId = normalizedFolderId;
-        updates.customOrder = await getNextBookmarkCustomOrder(normalizedFolderId);
-      }
-
-      if (iconId != null) {
-        updates.iconId = iconId;
-      }
-
-      await db.bookmarks.update(bookmark.id, updates);
-
-      if (previousIconIdToCleanup) {
-        await deleteIconIfUnused(previousIconIdToCleanup);
-      }
-
-      return {
-        bookmarkId: bookmark.id,
-        action: 'updated'
-      };
-    });
-  } catch (error) {
-    console.error('Error saving or updating bookmark by url:', error);
-    throw error;
-  }
-}
 
 export async function recordBookmarkClick(bookmarkId) {
   try {

@@ -370,34 +370,6 @@ body {
   color: #f1ffe8;
 }
 
-.vm-settings-block {
-  border: 1px solid var(--vm-border);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.02);
-  padding: 12px;
-  margin-bottom: 12px;
-}
-
-.vm-settings-block .title {
-  font-size: 0.92rem;
-  margin-bottom: 8px;
-  color: var(--vm-text);
-}
-
-.vm-settings-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.vm-settings-actions .button {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-.vm-settings-field {
-  margin-bottom: 10px;
-}
 
 .vm-settings-field:last-child {
   margin-bottom: 0;
