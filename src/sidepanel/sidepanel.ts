@@ -77,6 +77,16 @@ interface SidepanelState {
   moveModalOpen: boolean;
 }
 
+interface BookmarkPageResult {
+  items: BookmarkWithIcon[];
+  total: number;
+}
+
+interface BookmarkPageRequest {
+  offset: number;
+  limit: number;
+}
+
 function normalizeId(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
@@ -470,11 +480,7 @@ async function handleBulkOpenSelected() {
     for (const bookmark of selectedBookmarks) {
       await openBookmarkUrl(bookmark.url, true);
       await recordBookmarkClick(bookmark.id);
-    }
-
-    if (state.bookmarkSortBy === 'lastClickedAt') {
-      // If sorting by last clicked, we need to reload bookmarks to reflect the new order after the clicks
-      await loadBookmarks();
+      updateBookmarkLastClickedLocally(bookmark.id);
     }
   } catch (error) {
     console.error('Error opening selected bookmarks:', error);
@@ -537,7 +543,17 @@ async function submitMoveModal() {
     const folderIds = Array.from(state.selectedFolderIds);
 
     for (const bookmarkId of bookmarkIds) {
+      const bookmark = state.bookmarks.find((item) => item.id === bookmarkId);
+
       await updateBookmark(bookmarkId, { folderId: targetFolderId });
+
+      if (bookmark) {
+        replaceVisibleBookmark(bookmark, {
+          ...bookmark,
+          folderId: targetFolderId,
+          updatedAt: Date.now()
+        });
+      }
     }
 
     for (const folderId of folderIds) {
@@ -546,13 +562,12 @@ async function submitMoveModal() {
       }
 
       await updateFolder(folderId, { parentId: targetFolderId });
+      applyFolderMoveLocally(folderId, targetFolderId);
     }
 
     closeMoveModal();
     clearMultiSelection();
-    await loadFolders();
-    // After moving, we need to check if the current folder is one of the moved folders or is a child of one of the moved folders. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
-    await loadBookmarks();
+    refreshListDomFromState();
   } catch (error) {
     console.error('Error moving selected items:', error);
     setError(error?.message || 'Unable to move selected items.');
@@ -577,17 +592,21 @@ async function handleBulkDeleteSelected() {
 
   try {
     for (const bookmarkId of bookmarkIds) {
+      const bookmark = state.bookmarks.find((item) => item.id === bookmarkId);
       await deleteBookmark(bookmarkId);
+
+      if (bookmark) {
+        removeVisibleBookmark(bookmark);
+      }
     }
 
     for (const folderId of folderIds) {
       await deleteFolder(folderId, true);
+      removeFolderTreeLocally(folderId);
     }
 
     clearMultiSelection();
-    await loadFolders();
-    // After deleting, we need to check if the current folder is one of the deleted folders or is a child of one of the deleted folders. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
-    await loadBookmarks();
+    refreshListDomFromState();
   } catch (error) {
     console.error('Error deleting selected items:', error);
     setError(error?.message || 'Unable to delete selected items.');
@@ -703,14 +722,22 @@ function bindEvents() {
     try {
       const data = JSON.parse(dataStr);
       if (data.type === 'bookmark') {
+        const bookmark = state.bookmarks.find((item) => item.id === data.id);
         await updateBookmark(data.id, { folderId: targetFolderId });
+
+        if (bookmark) {
+          replaceVisibleBookmark(bookmark, {
+            ...bookmark,
+            folderId: targetFolderId,
+            updatedAt: Date.now()
+          });
+        }
       } else if (data.type === 'folder') {
         if (data.id === targetFolderId) return;
         await updateFolder(data.id, { parentId: targetFolderId });
+        applyFolderMoveLocally(data.id, targetFolderId);
       }
-      await loadFolders();
-      // After dropping into a folder, we need to check if the current folder is the target folder or is a child of the target folder. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
-      await loadBookmarks();
+      refreshListDomFromState();
     } catch (err) {
       console.error('Drop error:', err);
       setError(err.message);
@@ -743,14 +770,22 @@ function bindEvents() {
     try {
       const data = JSON.parse(dataStr);
       if (data.type === 'bookmark') {
+        const bookmark = state.bookmarks.find((item) => item.id === data.id);
         await updateBookmark(data.id, { folderId: targetFolderId });
+
+        if (bookmark) {
+          replaceVisibleBookmark(bookmark, {
+            ...bookmark,
+            folderId: targetFolderId,
+            updatedAt: Date.now()
+          });
+        }
       } else if (data.type === 'folder') {
         if (data.id === targetFolderId) return;
         await updateFolder(data.id, { parentId: targetFolderId });
+        applyFolderMoveLocally(data.id, targetFolderId);
       }
-      await loadFolders();
-      // After dropping into a folder, we need to check if the current folder is the target folder or is a child of the target folder. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
-      await loadBookmarks();
+      refreshListDomFromState();
     } catch (err) {
       console.error('Drop to breadcrumb error:', err);
       setError(err.message);
@@ -826,11 +861,7 @@ function bindEvents() {
 
       if (isValidId(bookmarkId)) {
         await recordBookmarkClick(bookmarkId);
-      }
-
-      if (state.bookmarkSortBy === 'lastClickedAt') {
-        // If sorting by last clicked, we need to reload bookmarks to reflect the new order after the click
-        await loadBookmarks();
+        updateBookmarkLastClickedLocally(bookmarkId);
       }
     } catch (error) {
       console.error('Error opening url:', error);
@@ -1179,7 +1210,7 @@ async function loadMoreBookmarks() {
   }
 }
 
-async function fetchBookmarkPage({ offset, limit }) {
+async function fetchBookmarkPage({ offset, limit }: BookmarkPageRequest): Promise<BookmarkPageResult> {
   const queryOptions = {
     rootOnly: !state.query,
     sortBy: state.bookmarkSortBy,
@@ -1199,6 +1230,452 @@ async function fetchBookmarkPage({ offset, limit }) {
     items,
     total
   };
+}
+
+function compareValues(left: unknown, right: unknown, direction: 'asc' | 'desc' = 'asc'): number {
+  const dir = direction === 'asc' ? 1 : -1;
+
+  if (left === right) {
+    return 0;
+  }
+
+  if (left === null || left === undefined) {
+    return 1;
+  }
+
+  if (right === null || right === undefined) {
+    return -1;
+  }
+
+  if (typeof left === 'string' || typeof right === 'string') {
+    return String(left).localeCompare(String(right)) * dir;
+  }
+
+  return (Number(left) - Number(right)) * dir;
+}
+
+function sortLoadedBookmarksInState(): void {
+  state.bookmarks.sort((left, right) => {
+    const primary = compareValues(left?.[state.bookmarkSortBy], right?.[state.bookmarkSortBy], state.bookmarkSortDir);
+
+    if (primary !== 0) {
+      return primary;
+    }
+
+    const updatedFallback = compareValues(left?.updatedAt, right?.updatedAt, 'desc');
+
+    if (updatedFallback !== 0) {
+      return updatedFallback;
+    }
+
+    return compareValues(left?.id, right?.id, 'desc');
+  });
+}
+
+function sortFoldersInState(): void {
+  state.folders.sort((left, right) => {
+    const primary = compareValues(left?.[state.folderSortBy], right?.[state.folderSortBy], state.folderSortDir);
+
+    if (primary !== 0) {
+      return primary;
+    }
+
+    return compareValues(left?.id, right?.id, 'asc');
+  });
+}
+
+function reorderByPosition<T extends { id: string }>(items: T[], targetId: string, position: 'top' | 'bottom'): T[] {
+  const source = [...items];
+  const currentIndex = source.findIndex((item) => item.id === targetId);
+
+  if (currentIndex < 0) {
+    return source;
+  }
+
+  const [item] = source.splice(currentIndex, 1);
+
+  if (position === 'bottom') {
+    source.push(item);
+    return source;
+  }
+
+  source.unshift(item);
+  return source;
+}
+
+function isFolderInCurrentScope(folderId: string | null): boolean {
+  if (state.currentFolderId === null) {
+    return folderId === null;
+  }
+
+  return folderId === state.currentFolderId;
+}
+
+function isFolderDescendantOf(folderId: string | null, ancestorId: string | null): boolean {
+  if (ancestorId === null) {
+    return folderId === null;
+  }
+
+  let currentId = folderId;
+  const byId = new Map(state.folders.map((folder) => [folder.id, folder]));
+  const visited = new Set<string>();
+
+  while (currentId !== null) {
+    if (currentId === ancestorId) {
+      return true;
+    }
+
+    if (visited.has(currentId)) {
+      break;
+    }
+
+    visited.add(currentId);
+    const folder = byId.get(currentId);
+    currentId = folder?.parentId ?? null;
+  }
+
+  return false;
+}
+
+function isBookmarkVisibleInCurrentView(bookmark: Pick<BookmarkWithIcon, 'title' | 'url' | 'folderId'>): boolean {
+  if (state.query) {
+    const normalizedQuery = state.query.trim().toLowerCase();
+    const title = String(bookmark.title ?? '').toLowerCase();
+    const url = String(bookmark.url ?? '').toLowerCase();
+    const matchesQuery = !normalizedQuery || title.includes(normalizedQuery) || url.includes(normalizedQuery);
+
+    if (!matchesQuery) {
+      return false;
+    }
+
+    if (state.currentFolderId === null) {
+      return true;
+    }
+
+    return isFolderDescendantOf(bookmark.folderId ?? null, state.currentFolderId);
+  }
+
+  return isFolderInCurrentScope(bookmark.folderId ?? null);
+}
+
+function adjustFolderBookmarkCounts(folderId: string | null, delta: number): void {
+  if (!delta || folderId === null) {
+    return;
+  }
+
+  const byId = new Map(state.folders.map((folder) => [folder.id, folder]));
+  const visited = new Set<string>();
+  let currentId: string | null = folderId;
+
+  while (currentId !== null) {
+    if (visited.has(currentId)) {
+      break;
+    }
+
+    visited.add(currentId);
+    const folder = byId.get(currentId);
+
+    if (!folder) {
+      break;
+    }
+
+    folder.bookmarkCount = Math.max(0, Number(folder.bookmarkCount ?? 0) + delta);
+    currentId = folder.parentId ?? null;
+  }
+}
+
+function syncVisibleBookmarkMetrics(): void {
+  state.hasMore = state.bookmarks.length < state.totalBookmarks;
+}
+
+function syncListShellUi(): void {
+  const selectedCount = getSelectedCount();
+  const foldersInView = getCurrentChildFolders();
+  const shouldShowEmpty = !state.loading && !state.error && foldersInView.length === 0 && state.bookmarks.length === 0;
+
+  $count.text(state.totalBookmarks);
+  renderBreadcrumb();
+
+  if ($multiSelectCount) {
+    $multiSelectCount.text(String(selectedCount));
+  }
+
+  if ($multiSelectPanel) {
+    $multiSelectPanel.toggleClass('is-hidden', !state.multiSelectEnabled);
+  }
+
+  if ($listWrap) {
+    $listWrap.toggleClass('with-multi-panel', state.multiSelectEnabled);
+  }
+
+  if ($bulkOpenBtn) {
+    $bulkOpenBtn.prop('disabled', state.selectedBookmarkIds.size === 0);
+  }
+
+  if ($bulkMoveBtn) {
+    $bulkMoveBtn.prop('disabled', selectedCount === 0);
+  }
+
+  if ($bulkDeleteBtn) {
+    $bulkDeleteBtn.prop('disabled', selectedCount === 0);
+  }
+
+  if ($bulkClearBtn) {
+    if (selectedCount === 0) {
+      $bulkClearBtn.attr('title', 'Select all');
+      $bulkClearBtn.attr('aria-label', 'Select all');
+      $bulkClearBtn.addClass('is-select-all');
+    } else {
+      $bulkClearBtn.attr('title', 'Clear selection');
+      $bulkClearBtn.attr('aria-label', 'Clear selection');
+      $bulkClearBtn.removeClass('is-select-all');
+    }
+
+    $bulkClearBtn.prop('disabled', false);
+  }
+
+  $loadingState.toggleClass('is-hidden', !state.loading);
+  $errorState.toggleClass('is-hidden', !state.error);
+  $emptyState.toggleClass('is-hidden', !shouldShowEmpty);
+  $loadingMoreState.toggleClass('is-hidden', !state.loadingMore);
+}
+
+function createFolderRowElement(folder: FolderRecord): JQuery<HTMLElement> {
+  const folderChecked = state.selectedFolderIds.has(folder.id);
+  const folderCheckboxHtml = state.multiSelectEnabled
+    ? `
+      <label class="vm-select-checkbox" aria-label="Select folder">
+        <input class="vm-item-checkbox" type="checkbox" data-action="toggle-folder-select" data-folder-id="${folder.id}" ${folderChecked ? 'checked' : ''} />
+      </label>
+    `
+    : '';
+
+  return $(`
+    <article class="vm-card vm-folder-row${folderChecked ? ' is-active' : ''}" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button" draggable="true">
+      <div class="vm-card-head">
+        ${folderCheckboxHtml}
+        <div class="vm-icon"><i class="fas fa-folder"></i></div>
+        <div class="vm-card-body">
+          <div class="vm-bookmark-title">${escapeHtml(folder.name)}</div>
+          <div class="vm-folder-subtext">${folder.bookmarkCount} bookmarks</div>
+        </div>
+        <span class="icon has-text-grey-light"><i class="fas fa-chevron-right"></i></span>
+      </div>
+    </article>
+  `);
+}
+
+function createBookmarkRowElement(bookmark: BookmarkWithIcon): JQuery<HTMLElement> {
+  const bookmarkChecked = state.selectedBookmarkIds.has(bookmark.id);
+  const bookmarkCheckboxHtml = state.multiSelectEnabled
+    ? `
+      <label class="vm-select-checkbox" aria-label="Select bookmark">
+        <input class="vm-item-checkbox" type="checkbox" data-action="toggle-bookmark-select" data-bookmark-id="${bookmark.id}" ${bookmarkChecked ? 'checked' : ''} />
+      </label>
+    `
+    : '';
+
+  const bookmarkMenuButtonHtml = state.multiSelectEnabled
+    ? ''
+    : `
+      <button class="button vm-link-button vm-row-menu-trigger" type="button" aria-label="Open bookmark menu" data-action="open-bookmark-menu" data-id="${bookmark.id}">
+        <span class="icon is-small"><i class="fas fa-ellipsis-v"></i></span>
+      </button>
+    `;
+
+  const iconHtml = bookmark.icon
+    ? `<img src="${escapeAttr(bookmark.icon.data)}" alt="" />`
+    : '<i class="fas fa-bookmark"></i>';
+
+  return $(`
+    <article class="vm-card vm-bookmark-row${bookmarkChecked || (state.selectedBookmark && state.selectedBookmark.id === bookmark.id && !state.multiSelectEnabled) ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}" draggable="true">
+      <div class="vm-card-head">
+        ${bookmarkCheckboxHtml}
+        <div class="vm-icon">${iconHtml}</div>
+        <div class="vm-card-body">
+          <a class="vm-bookmark-title" href="${escapeAttr(bookmark.url)}" title="${escapeAttr(bookmark.title)}" data-action="open-link" data-id="${bookmark.id}" data-url="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.title)}</a>
+          <div class="vm-bookmark-url" title="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.url)}</div>
+        </div>
+        ${bookmarkMenuButtonHtml}
+      </div>
+    </article>
+  `);
+}
+
+function refreshListDomFromState(): void {
+  syncListShellUi();
+
+  const foldersInView = getCurrentChildFolders();
+  const shouldShowEmpty = !state.loading && !state.error && foldersInView.length === 0 && state.bookmarks.length === 0;
+
+  if (state.loading || state.error || shouldShowEmpty) {
+    $list.empty();
+    return;
+  }
+
+  const fragments: JQuery<HTMLElement>[] = [];
+
+  if (!state.query) {
+    fragments.push($(`
+      <article class="vm-folder-create-inline" role="group" aria-label="Create folder inline">
+        <span class="vm-create-icon" aria-hidden="true"><i class="fas fa-folder-plus"></i></span>
+        <input id="inline-create-folder-input" class="input" type="text" placeholder="New folder" maxlength="60" />
+        <button class="button vm-folder-create-submit" type="button" aria-label="Create folder" data-action="create-folder-inline">
+          <span class="icon"><i class="fas fa-plus"></i></span>
+        </button>
+      </article>
+    `));
+  }
+
+  foldersInView.forEach((folder) => {
+    fragments.push(createFolderRowElement(folder));
+  });
+
+  state.bookmarks.forEach((bookmark) => {
+    fragments.push(createBookmarkRowElement(bookmark));
+  });
+
+  $list.empty();
+  fragments.forEach((fragment) => {
+    $list.append(fragment);
+  });
+}
+
+function replaceVisibleBookmark(oldBookmark: BookmarkWithIcon, nextBookmark: BookmarkWithIcon): void {
+  const wasVisible = isBookmarkVisibleInCurrentView(oldBookmark);
+  const isVisible = isBookmarkVisibleInCurrentView(nextBookmark);
+  const existingIndex = state.bookmarks.findIndex((bookmark) => bookmark.id === oldBookmark.id);
+
+  adjustFolderBookmarkCounts(oldBookmark.folderId ?? null, -1);
+  adjustFolderBookmarkCounts(nextBookmark.folderId ?? null, 1);
+
+  if (wasVisible && !isVisible) {
+    state.totalBookmarks = Math.max(0, state.totalBookmarks - 1);
+  } else if (!wasVisible && isVisible) {
+    state.totalBookmarks += 1;
+  }
+
+  if (existingIndex >= 0 && !isVisible) {
+    state.bookmarks.splice(existingIndex, 1);
+  } else if (existingIndex >= 0 && isVisible) {
+    state.bookmarks[existingIndex] = nextBookmark;
+  } else if (isVisible) {
+    state.bookmarks.push(nextBookmark);
+  }
+
+  sortLoadedBookmarksInState();
+  syncVisibleBookmarkMetrics();
+}
+
+function removeVisibleBookmark(bookmark: BookmarkWithIcon): void {
+  const existingIndex = state.bookmarks.findIndex((item) => item.id === bookmark.id);
+
+  adjustFolderBookmarkCounts(bookmark.folderId ?? null, -1);
+
+  if (isBookmarkVisibleInCurrentView(bookmark)) {
+    state.totalBookmarks = Math.max(0, state.totalBookmarks - 1);
+  }
+
+  if (existingIndex >= 0) {
+    state.bookmarks.splice(existingIndex, 1);
+  }
+
+  state.selectedBookmarkIds.delete(bookmark.id);
+  syncVisibleBookmarkMetrics();
+}
+
+function updateBookmarkLastClickedLocally(bookmarkId: string): void {
+  const bookmark = state.bookmarks.find((item) => item.id === bookmarkId);
+
+  if (!bookmark) {
+    return;
+  }
+
+  bookmark.lastClickedAt = Date.now();
+
+  if (state.bookmarkSortBy === 'lastClickedAt') {
+    sortLoadedBookmarksInState();
+    refreshListDomFromState();
+  }
+}
+
+function reorderBookmarkLocally(bookmarkId: string, position: 'top' | 'bottom'): void {
+  if (state.bookmarkSortBy !== 'customOrder') {
+    return;
+  }
+
+  state.bookmarks = reorderByPosition(state.bookmarks, bookmarkId, position).map((bookmark, index) => ({
+    ...bookmark,
+    customOrder: index + 1
+  }));
+  refreshListDomFromState();
+}
+
+function collectFolderDescendantIds(folderId: string): Set<string> {
+  const descendants = new Set<string>();
+  const queue: string[] = [folderId];
+
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+
+    if (!currentId || descendants.has(currentId)) {
+      continue;
+    }
+
+    descendants.add(currentId);
+
+    state.folders.forEach((candidate) => {
+      if ((candidate.parentId ?? null) === currentId) {
+        queue.push(candidate.id);
+      }
+    });
+  }
+
+  return descendants;
+}
+
+function applyFolderMoveLocally(folderId: string, targetFolderId: string | null): void {
+  const folder = state.folders.find((item) => item.id === folderId);
+
+  if (!folder) {
+    return;
+  }
+
+  folder.parentId = targetFolderId;
+  folder.updatedAt = Date.now();
+  sortFoldersInState();
+}
+
+function removeFolderTreeLocally(folderId: string): void {
+  const descendantIds = collectFolderDescendantIds(folderId);
+
+  if (descendantIds.size === 0) {
+    return;
+  }
+
+  state.folders = state.folders.filter((folder) => !descendantIds.has(folder.id));
+  state.bookmarks = state.bookmarks.filter((bookmark) => {
+    const shouldRemove = bookmark.folderId !== null && descendantIds.has(bookmark.folderId);
+
+    if (shouldRemove) {
+      state.selectedBookmarkIds.delete(bookmark.id);
+
+      if (isBookmarkVisibleInCurrentView(bookmark)) {
+        state.totalBookmarks = Math.max(0, state.totalBookmarks - 1);
+      }
+    }
+
+    return !shouldRemove;
+  });
+
+  if (state.currentFolderId !== null && descendantIds.has(state.currentFolderId)) {
+    state.currentFolderId = null;
+  }
+
+  state.selectedFolderIds = new Set(
+    Array.from(state.selectedFolderIds).filter((selectedId) => !descendantIds.has(selectedId))
+  );
+  syncVisibleBookmarkMetrics();
 }
 
 function getCurrentChildFolders() {
@@ -1289,51 +1766,8 @@ function handleListScroll() {
 }
 
 function render() {
-  const selectedCount = getSelectedCount();
-
-  $count.text(state.totalBookmarks);
-  renderBreadcrumb();
-
   $list.removeClass('vm-list-mode-list vm-list-mode-grid');
   $list.addClass(state.viewMode === 'grid' ? 'vm-list-mode-grid' : 'vm-list-mode-list');
-
-  if ($multiSelectCount) {
-    $multiSelectCount.text(String(selectedCount));
-  }
-
-  if ($multiSelectPanel) {
-    $multiSelectPanel.toggleClass('is-hidden', !state.multiSelectEnabled);
-  }
-
-  if ($listWrap) {
-    $listWrap.toggleClass('with-multi-panel', state.multiSelectEnabled);
-  }
-
-  if ($bulkOpenBtn) {
-    $bulkOpenBtn.prop('disabled', state.selectedBookmarkIds.size === 0);
-  }
-
-  if ($bulkMoveBtn) {
-    $bulkMoveBtn.prop('disabled', selectedCount === 0);
-  }
-
-  if ($bulkDeleteBtn) {
-    $bulkDeleteBtn.prop('disabled', selectedCount === 0);
-  }
-
-  if ($bulkClearBtn) {
-    if (selectedCount === 0) {
-      $bulkClearBtn.attr('title', 'Select all');
-      $bulkClearBtn.attr('aria-label', 'Select all');
-      $bulkClearBtn.addClass('is-select-all');
-    } else {
-      $bulkClearBtn.attr('title', 'Clear selection');
-      $bulkClearBtn.attr('aria-label', 'Clear selection');
-      $bulkClearBtn.removeClass('is-select-all');
-    }
-
-    $bulkClearBtn.prop('disabled', false);
-  }
 
   if ($multiSelectChip) {
     $multiSelectChip.attr('title', state.multiSelectEnabled ? 'Multi select on' : 'Multi select off');
@@ -1349,102 +1783,7 @@ function render() {
     $viewModeChip.toggleClass('is-active', state.viewMode === 'grid');
   }
 
-  $loadingState.toggleClass('is-hidden', !state.loading);
-  $errorState.toggleClass('is-hidden', !state.error);
-
-  const foldersInView = getCurrentChildFolders();
-  const shouldShowEmpty = !state.loading && !state.error && foldersInView.length === 0 && state.bookmarks.length === 0;
-  $emptyState.toggleClass('is-hidden', !shouldShowEmpty);
-  $loadingMoreState.toggleClass('is-hidden', !state.loadingMore);
-
-
-  //TODO: we can optimize this by only re-rendering the changed items instead of clearing and re-rendering the entire list. This will be especially beneficial when we have a large number of bookmarks and folders. We can implement this by keeping track of the currently rendered items and comparing them with the new state to determine which items need to be added, removed, or updated in the DOM.
-  if (state.loading || state.error || shouldShowEmpty) {
-    $list.empty();
-    return;
-  }
-
-  $list.empty();
-
-  if (!state.query) {
-    const createRow = $(`
-      <article class="vm-folder-create-inline" role="group" aria-label="Create folder inline">
-        <span class="vm-create-icon" aria-hidden="true"><i class="fas fa-folder-plus"></i></span>
-        <input id="inline-create-folder-input" class="input" type="text" placeholder="New folder" maxlength="60" />
-        <button class="button vm-folder-create-submit" type="button" aria-label="Create folder" data-action="create-folder-inline">
-          <span class="icon"><i class="fas fa-plus"></i></span>
-        </button>
-      </article>
-    `);
-
-    $list.append(createRow);
-  }
-
-  foldersInView.forEach((folder) => {
-    const folderChecked = state.selectedFolderIds.has(folder.id);
-    const folderCheckboxHtml = state.multiSelectEnabled
-      ? `
-        <label class="vm-select-checkbox" aria-label="Select folder">
-          <input class="vm-item-checkbox" type="checkbox" data-action="toggle-folder-select" data-folder-id="${folder.id}" ${folderChecked ? 'checked' : ''} />
-        </label>
-      `
-      : '';
-
-    const item = $(`
-      <article class="vm-card vm-folder-row${folderChecked ? ' is-active' : ''}" data-action="open-folder" data-folder-id="${folder.id}" tabindex="0" role="button" draggable="true">
-        <div class="vm-card-head">
-          ${folderCheckboxHtml}
-          <div class="vm-icon"><i class="fas fa-folder"></i></div>
-          <div class="vm-card-body">
-            <div class="vm-bookmark-title">${escapeHtml(folder.name)}</div>
-            <div class="vm-folder-subtext">${folder.bookmarkCount} bookmarks</div>
-          </div>
-          <span class="icon has-text-grey-light"><i class="fas fa-chevron-right"></i></span>
-        </div>
-      </article>
-    `);
-
-    $list.append(item);
-  });
-
-  state.bookmarks.forEach((bookmark) => {
-    const bookmarkChecked = state.selectedBookmarkIds.has(bookmark.id);
-    const bookmarkCheckboxHtml = state.multiSelectEnabled
-      ? `
-        <label class="vm-select-checkbox" aria-label="Select bookmark">
-          <input class="vm-item-checkbox" type="checkbox" data-action="toggle-bookmark-select" data-bookmark-id="${bookmark.id}" ${bookmarkChecked ? 'checked' : ''} />
-        </label>
-      `
-      : '';
-
-    const bookmarkMenuButtonHtml = state.multiSelectEnabled
-      ? ''
-      : `
-        <button class="button vm-link-button vm-row-menu-trigger" type="button" aria-label="Open bookmark menu" data-action="open-bookmark-menu" data-id="${bookmark.id}">
-          <span class="icon is-small"><i class="fas fa-ellipsis-v"></i></span>
-        </button>
-      `;
-
-const iconHtml = bookmark.icon
-      ? `<img src="${escapeAttr(bookmark.icon.data)}" alt="" />`
-      : '<i class="fas fa-bookmark"></i>';
-
-    const item = $(`
-      <article class="vm-card vm-bookmark-row${bookmarkChecked || (state.selectedBookmark && state.selectedBookmark.id === bookmark.id && !state.multiSelectEnabled) ? ' is-active' : ''}" data-bookmark-id="${bookmark.id}" draggable="true">
-        <div class="vm-card-head">
-          ${bookmarkCheckboxHtml}
-          <div class="vm-icon">${iconHtml}</div>
-          <div class="vm-card-body">
-            <a class="vm-bookmark-title" href="${escapeAttr(bookmark.url)}" title="${escapeAttr(bookmark.title)}" data-action="open-link" data-id="${bookmark.id}" data-url="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.title)}</a>
-            <div class="vm-bookmark-url" title="${escapeAttr(bookmark.url)}">${escapeHtml(bookmark.url)}</div>
-          </div>
-          ${bookmarkMenuButtonHtml}
-        </div>
-      </article>
-    `);
-
-    $list.append(item);
-  });
+  refreshListDomFromState();
 }
 
 function setContextMenuState(nextState) {
@@ -1568,7 +1907,7 @@ async function copyTextToClipboard(value) {
   return true;
 }
 
-async function handleDeleteBookmark(bookmark) {
+async function handleDeleteBookmark(bookmark: BookmarkWithIcon) {
   const confirmed = window.confirm(`Delete "${bookmark.title}"?`);
 
   if (!confirmed) {
@@ -1578,12 +1917,11 @@ async function handleDeleteBookmark(bookmark) {
   await deleteBookmark(bookmark.id);
 
   if (state.selectedBookmark && state.selectedBookmark.id === bookmark.id) {
-    closeDrawer();
+    closeDrawer(true);
   }
 
-  //TODO: After deleting refrashing folders and bookmarks can be optimized to avoid duplicate calls when the deleted bookmark is in the current folder. This can be done by checking the folderId of the deleted bookmark and only refreshing folders if the bookmark is in a different folder, otherwise just refreshing bookmarks.
-  await loadFolders();
-  await loadBookmarks();
+  removeVisibleBookmark(bookmark);
+  refreshListDomFromState();
 }
 
 async function handleContextMenuAction(action) {
@@ -1606,11 +1944,7 @@ async function handleContextMenuAction(action) {
       if (action === 'open-bookmark') {
         await openBookmarkUrl(bookmark.url, state.openInNewTab);
         await recordBookmarkClick(bookmark.id);
-
-        if (state.bookmarkSortBy === 'lastClickedAt') {
-          // If sorting by last clicked, we need to reload bookmarks to reflect the new order after the click
-          await loadBookmarks();
-        }
+        updateBookmarkLastClickedLocally(bookmark.id);
 
         return;
       }
@@ -1633,9 +1967,7 @@ async function handleContextMenuAction(action) {
       if (action === 'move-bookmark-top' || action === 'move-bookmark-bottom') {
         const position = action === 'move-bookmark-top' ? 'top' : 'bottom';
         await moveBookmarkInCustomOrder(bookmark.id, position);
-
-        // After moving in custom order, we need to reload bookmarks to reflect the new order
-        await loadBookmarks();
+        reorderBookmarkLocally(bookmark.id, position);
         return;
       }
 
@@ -1687,9 +2019,8 @@ async function handleContextMenuAction(action) {
       }
 
       await deleteFolder(folder.id, true);
-      await loadFolders();
-      // After deleting a folder, we need to check if the current folder is deleted or is a child of the deleted folder. If so, we need to navigate to the root and load bookmarks accordingly.
-      await loadBookmarks();
+      removeFolderTreeLocally(folder.id);
+      refreshListDomFromState();
     }
   } catch (error) {
     console.error('Context menu action failed:', error);
@@ -1749,7 +2080,7 @@ function openDrawer(bookmark) {
   }, 50);
 }
 
-function closeDrawer() {
+function closeDrawer(skipRender = false) {
   if (!state.selectedBookmark) {
     if (state.activeDrawer === 'bookmark') {
       $drawerBackdrop.removeClass('is-open');
@@ -1765,7 +2096,10 @@ function closeDrawer() {
   $drawer.removeClass('is-open');
   $drawer.attr('aria-hidden', 'true');
   state.activeDrawer = null;
-  render();
+
+  if (!skipRender) {
+    render();
+  }
 }
 
 async function openSettingsPage() {
@@ -1855,15 +2189,24 @@ async function saveBookmark() {
   }
 
   try {
+    const previousBookmark = state.selectedBookmark;
+    const nextBookmark = {
+      ...previousBookmark,
+      title,
+      url,
+      folderId,
+      updatedAt: Date.now()
+    };
+
     await updateBookmark(state.selectedBookmark.id, {
       title,
       url,
       folderId
     });
 
-    closeDrawer();
-    // After updating a bookmark, we need to check if the bookmark's folder has changed or if the bookmark is in the current folder. If so, we need to reload bookmarks to reflect the changes. Otherwise, we can just update the bookmark in the current state without reloading.
-    await loadBookmarks();
+    closeDrawer(true);
+    replaceVisibleBookmark(previousBookmark, nextBookmark);
+    refreshListDomFromState();
   } catch (error) {
     console.error('Error updating bookmark:', error);
     setError(error?.message || 'Unable to save bookmark changes.');
@@ -1882,10 +2225,13 @@ async function createFolderFromInput() {
   try {
     const folder = await createFolder(folderName, state.currentFolderId);
     $inlineInput.val('');
-    await loadFolders();
+    state.folders.push(folder);
+    sortFoldersInState();
     state.currentFolderId = folder.id;
-    // After creating a folder, we navigate into it, so we need to reload bookmarks to show the contents of the new folder (which will be empty).
-    await loadBookmarks();
+    state.bookmarks = [];
+    state.totalBookmarks = 0;
+    state.hasMore = false;
+    refreshListDomFromState();
   } catch (error) {
     console.error('Error creating folder:', error);
     setError(error?.message || 'Unable to create folder.');

@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
@@ -7,11 +8,11 @@ export default defineConfig({
     build: {
         rollupOptions: {
             input: {
-                popup: 'src/popup/popup.html',
-                sidepanel: 'src/sidepanel/sidepanel.html',
-                settings: 'src/settings/settings.html',
-                background: 'src/background.js',
-                shortcutListener: 'src/content/shortcut-listener.ts',
+                popup: resolve(__dirname, 'src/popup/popup.html'),
+                sidepanel: resolve(__dirname, 'src/sidepanel/sidepanel.html'),
+                settings: resolve(__dirname, 'src/settings/settings.html'),
+                background: resolve(__dirname, 'src/background.js'),
+                shortcutListener: resolve(__dirname, 'src/content/shortcut-listener.ts'),
             },
             output: {
                 entryFileNames: '[name].js'
