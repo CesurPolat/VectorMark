@@ -433,6 +433,7 @@ async function handleBulkOpenSelected() {
     }
 
     if (state.bookmarkSortBy === 'lastClickedAt') {
+      // If sorting by last clicked, we need to reload bookmarks to reflect the new order after the clicks
       await loadBookmarks();
     }
   } catch (error) {
@@ -510,6 +511,7 @@ async function submitMoveModal() {
     closeMoveModal();
     clearMultiSelection();
     await loadFolders();
+    // After moving, we need to check if the current folder is one of the moved folders or is a child of one of the moved folders. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
     await loadBookmarks();
   } catch (error) {
     console.error('Error moving selected items:', error);
@@ -544,6 +546,7 @@ async function handleBulkDeleteSelected() {
 
     clearMultiSelection();
     await loadFolders();
+    // After deleting, we need to check if the current folder is one of the deleted folders or is a child of one of the deleted folders. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
     await loadBookmarks();
   } catch (error) {
     console.error('Error deleting selected items:', error);
@@ -603,6 +606,7 @@ function bindEvents() {
     }
 
     searchTimer = window.setTimeout(() => {
+      // When search query changes, we need to reset to the first page of results. Since we don't have a page number in the state (we load more based on scroll), we can just reload bookmarks which will load the first page of search results.
       loadBookmarks();
     }, 180);
   });
@@ -665,6 +669,7 @@ function bindEvents() {
         await updateFolder(data.id, { parentId: targetFolderId });
       }
       await loadFolders();
+      // After dropping into a folder, we need to check if the current folder is the target folder or is a child of the target folder. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
       await loadBookmarks();
     } catch (err) {
       console.error('Drop error:', err);
@@ -704,6 +709,7 @@ function bindEvents() {
         await updateFolder(data.id, { parentId: targetFolderId });
       }
       await loadFolders();
+      // After dropping into a folder, we need to check if the current folder is the target folder or is a child of the target folder. If so, we need to navigate to the root and load bookmarks accordingly. Otherwise, we can just reload bookmarks in the current folder.
       await loadBookmarks();
     } catch (err) {
       console.error('Drop to breadcrumb error:', err);
@@ -783,6 +789,7 @@ function bindEvents() {
       }
 
       if (state.bookmarkSortBy === 'lastClickedAt') {
+        // If sorting by last clicked, we need to reload bookmarks to reflect the new order after the click
         await loadBookmarks();
       }
     } catch (error) {
@@ -884,6 +891,7 @@ function bindEvents() {
       applySharedSortSelection($sharedSortSelect.val());
       await persistSettings();
       await loadFolders();
+      // After changing sort, we need to check if the current folder is still valid (in case of custom order) and navigate to root if not. Then we can load bookmarks accordingly.
       await loadBookmarks();
     } catch (error) {
       console.error('Error saving shared sort:', error);
@@ -959,6 +967,7 @@ function navigateToFolder(folderId) {
 
   state.currentFolderId = parsedFolderId;
   clearMultiSelection();
+  // After navigating to a folder, we need to load bookmarks for that folder. Since we reset the current bookmarks and total count when we start loading, we can just call loadBookmarks which will load the first page of bookmarks for the new folder.
   loadBookmarks();
   renderBreadcrumb();
 }
@@ -1308,6 +1317,8 @@ function render() {
   $emptyState.toggleClass('is-hidden', !shouldShowEmpty);
   $loadingMoreState.toggleClass('is-hidden', !state.loadingMore);
 
+
+  //TODO: we can optimize this by only re-rendering the changed items instead of clearing and re-rendering the entire list. This will be especially beneficial when we have a large number of bookmarks and folders. We can implement this by keeping track of the currently rendered items and comparing them with the new state to determine which items need to be added, removed, or updated in the DOM.
   if (state.loading || state.error || shouldShowEmpty) {
     $list.empty();
     return;
@@ -1374,7 +1385,7 @@ function render() {
         </button>
       `;
 
-    const iconHtml = bookmark.icon
+const iconHtml = bookmark.icon
       ? `<img src="${escapeAttr(bookmark.icon.data)}" alt="" />`
       : '<i class="fas fa-bookmark"></i>';
 
@@ -1530,6 +1541,7 @@ async function handleDeleteBookmark(bookmark) {
     closeDrawer();
   }
 
+  //TODO: After deleting refrashing folders and bookmarks can be optimized to avoid duplicate calls when the deleted bookmark is in the current folder. This can be done by checking the folderId of the deleted bookmark and only refreshing folders if the bookmark is in a different folder, otherwise just refreshing bookmarks.
   await loadFolders();
   await loadBookmarks();
 }
@@ -1556,6 +1568,7 @@ async function handleContextMenuAction(action) {
         await recordBookmarkClick(bookmark.id);
 
         if (state.bookmarkSortBy === 'lastClickedAt') {
+          // If sorting by last clicked, we need to reload bookmarks to reflect the new order after the click
           await loadBookmarks();
         }
 
@@ -1581,6 +1594,7 @@ async function handleContextMenuAction(action) {
         const position = action === 'move-bookmark-top' ? 'top' : 'bottom';
         await moveBookmarkInCustomOrder(bookmark.id, position);
 
+        // After moving in custom order, we need to reload bookmarks to reflect the new order
         await loadBookmarks();
         return;
       }
@@ -1634,6 +1648,7 @@ async function handleContextMenuAction(action) {
 
       await deleteFolder(folder.id, true);
       await loadFolders();
+      // After deleting a folder, we need to check if the current folder is deleted or is a child of the deleted folder. If so, we need to navigate to the root and load bookmarks accordingly.
       await loadBookmarks();
     }
   } catch (error) {
@@ -1807,6 +1822,7 @@ async function saveBookmark() {
     });
 
     closeDrawer();
+    // After updating a bookmark, we need to check if the bookmark's folder has changed or if the bookmark is in the current folder. If so, we need to reload bookmarks to reflect the changes. Otherwise, we can just update the bookmark in the current state without reloading.
     await loadBookmarks();
   } catch (error) {
     console.error('Error updating bookmark:', error);
@@ -1828,6 +1844,7 @@ async function createFolderFromInput() {
     $inlineInput.val('');
     await loadFolders();
     state.currentFolderId = folder.id;
+    // After creating a folder, we navigate into it, so we need to reload bookmarks to show the contents of the new folder (which will be empty).
     await loadBookmarks();
   } catch (error) {
     console.error('Error creating folder:', error);
