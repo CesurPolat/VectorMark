@@ -144,7 +144,7 @@ export function parseNetscapeBookmarkHtml(html: string): BookmarkImportItem[] {
   return result;
 }
 
-export function folderMapKey(parentId: number | null, name: string): string {
+export function folderMapKey(parentId: string | null, name: string): string {
   return `${parentId === null ? 'root' : parentId}:${name.toLowerCase()}`;
 }
 

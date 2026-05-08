@@ -1,5 +1,6 @@
 ﻿import $ from 'jquery';
 import '@fortawesome/fontawesome-free/js/all.min.js';
+// @ts-ignore
 import 'bulma/css/bulma.min.css';
 
 import {
@@ -16,10 +17,7 @@ import {
   recordBookmarkClick,
   moveBookmarkInCustomOrder,
   moveFolderInCustomOrder,
-  resolveBookmarkIconPayload
 } from '../services/dbService';
-
-import {exportDatabase, importDatabaseReplace, normalizeLegacyIconsToBase64} from '../services/dbMaintenanceService';
 
 import {
   getSettings,
@@ -27,17 +25,59 @@ import {
   getDefaultSettings
 } from '../services/settingsService';
 import {
-  downloadTextFile,
-  getChromeBookmarkTree,
-  flattenChromeBookmarkTree,
-  parseBookmarkJsonImport,
-  parseNetscapeBookmarkHtml,
-  folderMapKey,
   escapeHtml,
   escapeAttr
 } from './sidepanel-utils';
+import type {
+  BookmarkImportItem,
+  BookmarkWithIcon,
+  FolderRecord,
+  IconStorageMode,
+  NormalizeIconsProgress,
+  Settings
+} from '../types';
 
-function normalizeId(value) {
+type DrawerType = 'bookmark' | null;
+type ContextMenuType = 'bookmark' | 'folder' | null;
+
+interface ContextMenuState {
+  isOpen: boolean;
+  type: ContextMenuType;
+  targetId: string | null;
+  x: number;
+  y: number;
+}
+
+interface SidepanelState {
+  bookmarks: BookmarkWithIcon[];
+  folders: FolderRecord[];
+  currentFolderId: string | null;
+  loading: boolean;
+  error: string | null;
+  query: string;
+  selectedBookmark: BookmarkWithIcon | null;
+  selectedBookmarkIds: Set<string>;
+  selectedFolderIds: Set<string>;
+  multiSelectEnabled: boolean;
+  activeDrawer: DrawerType;
+  settingsBusy: boolean;
+  pageSize: number;
+  openInNewTab: boolean;
+  viewMode: Settings['viewMode'];
+  iconStorageMode: IconStorageMode;
+  bookmarkSortBy: Settings['bookmarkSortBy'];
+  bookmarkSortDir: Settings['bookmarkSortDir'];
+  folderSortBy: Settings['folderSortBy'];
+  folderSortDir: Settings['folderSortDir'];
+  totalBookmarks: number;
+  hasMore: boolean;
+  loadingMore: boolean;
+  requestToken: number;
+  contextMenu: ContextMenuState;
+  moveModalOpen: boolean;
+}
+
+function normalizeId(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
   }
@@ -46,7 +86,7 @@ function normalizeId(value) {
   return normalized || null;
 }
 
-function isValidId(value) {
+function isValidId(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
@@ -89,7 +129,7 @@ let $moveModalCancel;
 let $moveModalSubmit;
 let $moveTargetFolderSelect;
 
-const state = {
+const state: SidepanelState = {
   bookmarks: [],
   folders: [],
   currentFolderId: null,
@@ -165,7 +205,7 @@ async function loadSettings() {
   syncSettingsControls();
 }
 
-function applySavedSettings(saved) {
+function applySavedSettings(saved: Settings) {
   state.openInNewTab = saved.openInNewTab;
   state.pageSize = saved.pageSize;
   state.viewMode = saved.viewMode === 'grid' ? 'grid' : 'list';
@@ -258,7 +298,7 @@ function parseSortSelectionValue(value, fallbackBy, fallbackDir) {
   };
 }
 
-function getSettingsPayload() {
+function getSettingsPayload(): Settings {
   return {
     openInNewTab: state.openInNewTab,
     pageSize: state.pageSize,
@@ -973,7 +1013,7 @@ function navigateToFolder(folderId) {
 }
 
 async function openBookmarkUrl(url, inNewTab) {
-  return await new Promise((resolve, reject) => {
+  return await new Promise<void>((resolve, reject) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const queryError = chrome.runtime?.lastError;
 
@@ -1735,7 +1775,7 @@ async function openSettingsPage() {
 
   if (chrome?.runtime?.openOptionsPage) {
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         chrome.runtime.openOptionsPage(() => {
           const runtimeError = chrome.runtime?.lastError;
 
@@ -1756,7 +1796,7 @@ async function openSettingsPage() {
 
   if (chrome?.tabs?.create) {
     try {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         chrome.tabs.create({ url: settingsUrl, active: true }, () => {
           const runtimeError = chrome.runtime?.lastError;
 

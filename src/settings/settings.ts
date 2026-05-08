@@ -1,5 +1,6 @@
 import $ from 'jquery';
 import '@fortawesome/fontawesome-free/js/all.min.js';
+// @ts-ignore
 import 'bulma/css/bulma.min.css';
 
 import {
@@ -24,8 +25,27 @@ import {
   parseNetscapeBookmarkHtml,
   folderMapKey
 } from '../sidepanel/sidepanel-utils';
+import type {
+  BookmarkImportItem,
+  IconPayload,
+  IconStorageMode,
+  NormalizeIconsProgress,
+  Settings
+} from '../types';
 
-const state = {
+interface SettingsPageState {
+  settingsBusy: boolean;
+  openInNewTab: boolean;
+  pageSize: number;
+  viewMode: Settings['viewMode'];
+  iconStorageMode: IconStorageMode;
+  bookmarkSortBy: Settings['bookmarkSortBy'];
+  bookmarkSortDir: Settings['bookmarkSortDir'];
+  folderSortBy: Settings['folderSortBy'];
+  folderSortDir: Settings['folderSortDir'];
+}
+
+const state: SettingsPageState = {
   settingsBusy: false,
   openInNewTab: true,
   pageSize: 40,
@@ -160,7 +180,7 @@ async function loadSettings() {
   syncSettingsControls();
 }
 
-function applySavedSettings(saved) {
+function applySavedSettings(saved: Settings) {
   state.openInNewTab = saved.openInNewTab;
   state.pageSize = saved.pageSize;
   state.viewMode = saved.viewMode === 'grid' ? 'grid' : 'list';
@@ -177,7 +197,7 @@ function syncSettingsControls() {
   $iconStorageModeSelect.val(state.iconStorageMode === 'url' ? 'url' : 'base64');
 }
 
-function getSettingsPayload() {
+function getSettingsPayload(): Settings {
   return {
     openInNewTab: state.openInNewTab,
     pageSize: state.pageSize,
@@ -197,7 +217,7 @@ async function persistSettings() {
   syncSettingsControls();
 }
 
-function setStatus(message, isError) {
+function setStatus(message: string, isError: boolean) {
   $status.text(message || '');
   $status.css('color', isError ? '#ffb1b1' : '');
 }
@@ -253,8 +273,9 @@ async function handleDbExport() {
   }
 }
 
-async function handleDbImportChange(event) {
-  const file = event.target.files?.[0];
+async function handleDbImportChange(event: JQuery.ChangeEvent) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
   $dbImportInput.val('');
 
   if (!file) {
@@ -300,8 +321,9 @@ async function handleChromeBookmarkImport() {
   }
 }
 
-async function handleBookmarkJsonImportChange(event) {
-  const file = event.target.files?.[0];
+async function handleBookmarkJsonImportChange(event: JQuery.ChangeEvent) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
   $bookmarkJsonInput.val('');
 
   if (!file) {
@@ -324,8 +346,9 @@ async function handleBookmarkJsonImportChange(event) {
   }
 }
 
-async function handleBookmarkHtmlImportChange(event) {
-  const file = event.target.files?.[0];
+async function handleBookmarkHtmlImportChange(event: JQuery.ChangeEvent) {
+  const input = event.target as HTMLInputElement | null;
+  const file = input?.files?.[0];
   $bookmarkHtmlInput.val('');
 
   if (!file) {
@@ -364,7 +387,7 @@ async function handleNormalizeIcons() {
 
     const summary = await normalizeLegacyIconsToBase64({
       storageMode: state.iconStorageMode,
-      onProgress: (progress) => {
+      onProgress: (progress: NormalizeIconsProgress) => {
         const now = Date.now();
 
         if (progress.stage !== 'done' && now - lastProgressRenderAt < 120) {
@@ -404,9 +427,9 @@ async function handleNormalizeIcons() {
   }
 }
 
-async function importNormalizedBookmarks(items) {
-  const folderMap = new Map();
-  const iconDataByDomain = new Map();
+async function importNormalizedBookmarks(items: BookmarkImportItem[]) {
+  const folderMap = new Map<string, string>();
+  const iconDataByDomain = new Map<string, IconPayload>();
 
   const existingFolders = await listFolders();
   existingFolders.forEach((folder) => {
@@ -459,7 +482,7 @@ async function importNormalizedBookmarks(items) {
   return summary;
 }
 
-async function resolveFolderId(folderPath, folderMap) {
+async function resolveFolderId(folderPath: string, folderMap: Map<string, string>) {
   const normalizedPath = String(folderPath ?? '').trim();
 
   if (!normalizedPath) {

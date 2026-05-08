@@ -1,5 +1,6 @@
 import $ from 'jquery';
 import '@fortawesome/fontawesome-free/js/all.min.js';
+// @ts-ignore
 import 'bulma/css/bulma.min.css';
 
 import {
@@ -10,10 +11,18 @@ import {
   getBookmarkByUrl
 } from '../services/dbService';
 import { getSettings } from '../services/settingsService';
+import type { IconPayload } from '../types';
 
-let selectedFolderId = null;
+interface SourceTabContext {
+  tabId: number | null;
+  title: string;
+  url: string;
+  favIconUrl: string;
+}
 
-function normalizeId(value) {
+let selectedFolderId: string | null = null;
+
+function normalizeId(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
   }
@@ -105,7 +114,7 @@ $(document).ready(async function () {
 
 });
 
-async function populateFolders() {
+async function populateFolders(): Promise<void> {
   try {
     const folders = await listFolders({ sortBy: 'name', sortDir: 'asc' });
     const $list = $("#dynamic-folder-list");
@@ -139,13 +148,13 @@ async function populateFolders() {
   }
 }
 
-function escapeHtml(text) {
+function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
-async function resolveSourceTabContext() {
+async function resolveSourceTabContext(): Promise<SourceTabContext> {
   const params = new URLSearchParams(window.location.search);
   const sourceTabIdParam = params.get('sourceTabId');
 
@@ -170,26 +179,30 @@ async function resolveSourceTabContext() {
   };
 }
 
-function isSupportedUrl(url) {
+function isSupportedUrl(url: string): boolean {
   return typeof url === 'string' && (url.startsWith('http') || url.startsWith('file'));
 }
 
-async function saveBookmark(url, data) {
+function getInputValue(selector: string): string {
+  return String($(selector).val() ?? '').trim();
+}
+
+async function saveBookmark(url: string, data: string): Promise<void> {
   const settings = await getSettings();
-  const iconPayload = await resolveBookmarkIconPayload(url, data, {
+  const iconPayload: IconPayload = await resolveBookmarkIconPayload(url, data, {
     storageMode: settings.iconStorageMode,
     skipPageHtmlLookup: true
   });
 
   await saveOrUpdateBookmarkByUrl(
-    $("#title-input").val(),
+    getInputValue('#title-input'),
     url,
     selectedFolderId,
     iconPayload
   );
 }
 
-function markAsSaved() {
+function markAsSaved(): void {
   chrome.action.setBadgeText({ text: " " });
   chrome.action.setBadgeBackgroundColor({ color: "#7af93b" });
 }

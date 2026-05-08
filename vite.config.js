@@ -11,7 +11,7 @@ export default defineConfig({
                 sidepanel: 'src/sidepanel/sidepanel.html',
                 settings: 'src/settings/settings.html',
                 background: 'src/background.js',
-                shortcutListener: 'src/content/shortcut-listener.js',
+                shortcutListener: 'src/content/shortcut-listener.ts',
             },
             output: {
                 entryFileNames: '[name].js'
