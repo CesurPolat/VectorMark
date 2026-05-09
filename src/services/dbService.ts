@@ -5,6 +5,12 @@ import {
   resolveBookmarkIconPayload,
   resolveBookmarkIconData
 } from './iconService';
+import { getSettings } from './settingsService';
+import {
+  upsertBookmarkEmbedding,
+  deleteBookmarkEmbedding,
+  semanticSearchBookmarks
+} from './embeddingIndexService';
 import type {
   BookmarkRecord,
   QueryOptions
@@ -94,6 +100,30 @@ function normalizeBookmarkFolderId(folderId) {
 
   const normalized = String(folderId).trim();
   return normalized || null;
+}
+
+function queueEmbeddingUpsert(bookmarkId: string) {
+  void (async () => {
+    try {
+      const record = await db.bookmarks.get(bookmarkId);
+      if (!record) {
+        return;
+      }
+      await upsertBookmarkEmbedding(normalizeBookmarkRecord(record));
+    } catch (error) {
+      console.error('Error updating embedding index:', error);
+    }
+  })();
+}
+
+function queueEmbeddingDelete(bookmarkId: string) {
+  void (async () => {
+    try {
+      await deleteBookmarkEmbedding(bookmarkId);
+    } catch (error) {
+      console.error('Error removing embedding index entry:', error);
+    }
+  })();
 }
 
 function normalizeSortDirection(direction, fallback = 'desc') {
@@ -215,7 +245,7 @@ async function getFoldersByParentId(parentId = null) {
 
 export async function updateBookmark(bookmarkId, updates) {
   try {
-    return await db.transaction('rw', db.bookmarks, async () => {
+    const updatedBookmark = await db.transaction('rw', db.bookmarks, async () => {
       const currentBookmark = await db.bookmarks.get(bookmarkId);
 
       if (!currentBookmark) {
@@ -246,8 +276,14 @@ export async function updateBookmark(bookmarkId, updates) {
 
       await db.bookmarks.update(bookmarkId, nextBookmark);
 
-      return bookmarkId;
+      return {
+        ...currentBookmark,
+        ...nextBookmark,
+        id: bookmarkId
+      };
     });
+    queueEmbeddingUpsert(updatedBookmark.id);
+    return updatedBookmark.id;
   } catch (error) {
     console.error('Error updating bookmark:', error);
     throw error;
@@ -256,7 +292,7 @@ export async function updateBookmark(bookmarkId, updates) {
 
 export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
   try {
-    return await db.transaction('rw', db.bookmarks, db.icons, async () => {
+    const result = await db.transaction('rw', db.bookmarks, db.icons, async () => {
       const now = Date.now();
       const normalizedIcon = normalizeIconInput(data);
       const normalizedFolderId = normalizeBookmarkFolderId(folderId);
@@ -326,6 +362,8 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
         action: 'updated'
       };
     });
+    queueEmbeddingUpsert(result.bookmarkId);
+    return result;
   } catch (error) {
     console.error('Error saving or updating bookmark by url:', error);
     throw error;
@@ -334,7 +372,7 @@ export async function saveOrUpdateBookmarkByUrl(title, url, folderId, data) {
 
 export async function deleteBookmark(bookmarkId) {
   try {
-    return await db.transaction('rw', db.bookmarks, db.icons, async () => {
+    const deleted = await db.transaction('rw', db.bookmarks, db.icons, async () => {
       const bookmark = await db.bookmarks.get(bookmarkId);
 
       if (!bookmark) {
@@ -349,6 +387,10 @@ export async function deleteBookmark(bookmarkId) {
 
       return true;
     });
+    if (deleted) {
+      queueEmbeddingDelete(bookmarkId);
+    }
+    return deleted;
   } catch (error) {
     console.error('Error deleting bookmark:', error);
     throw error;
@@ -357,11 +399,11 @@ export async function deleteBookmark(bookmarkId) {
 
 export async function deleteBookmarkByUrl(url) {
   try {
-    return await db.transaction('rw', db.bookmarks, db.icons, async () => {
+    const result = await db.transaction('rw', db.bookmarks, db.icons, async () => {
       const bookmark = await db.bookmarks.where('url').equals(url).first();
 
       if (!bookmark) {
-        return false;
+        return { deleted: false, bookmarkId: null };
       }
 
       await db.bookmarks.delete(bookmark.id);
@@ -370,8 +412,12 @@ export async function deleteBookmarkByUrl(url) {
         await deleteIconIfUnused(bookmark.iconId);
       }
 
-      return true;
+      return { deleted: true, bookmarkId: bookmark.id };
     });
+    if (result.deleted && result.bookmarkId) {
+      queueEmbeddingDelete(result.bookmarkId);
+    }
+    return result.deleted;
   } catch (error) {
     console.error('Error deleting bookmark by url:', error);
     throw error;
@@ -397,7 +443,8 @@ function toQueryOptions(options: QueryOptions = {}): QueryOptions {
   return {
     rootOnly: options?.rootOnly === true,
     sortBy: options?.sortBy,
-    sortDir: options?.sortDir
+    sortDir: options?.sortDir,
+    semanticSearch: options?.semanticSearch
   };
 }
 
@@ -516,8 +563,11 @@ async function getFolderScopeIds(folderId) {
 
 export async function searchBookmarksPage(query, folderId = null, offset = 0, limit = 40, options = {}) {
   try {
-    const normalizedQuery = (query ?? '').trim().toLowerCase();
+    const rawQuery = (query ?? '').trim();
+    const normalizedQuery = rawQuery.toLowerCase();
     const queryOptions = toQueryOptions(options);
+    const semanticEnabled = queryOptions.semanticSearch === true
+      || (queryOptions.semanticSearch !== false && (await getSettings()).semanticSearchEnabled);
 
     if (!normalizedQuery) {
       const [items, total] = await Promise.all([
@@ -531,6 +581,47 @@ export async function searchBookmarksPage(query, folderId = null, offset = 0, li
     const safeOffset = toSafePageNumber(offset, 0);
     const safeLimit = toSafePageSize(limit, 40);
     const matchesQuery = createSearchFilter(normalizedQuery);
+
+    if (semanticEnabled) {
+      const totalNeeded = safeOffset + safeLimit;
+      const searchResults = await semanticSearchBookmarks(rawQuery, Math.max(20, totalNeeded));
+
+      if (searchResults.length === 0) {
+        return { items: [], total: 0 };
+      }
+
+      return await db.transaction('r', db.bookmarks, db.icons, db.folders, async () => {
+        const scopedFolderIds = await getFolderScopeIds(folderId);
+        const orderedIds = searchResults.map((result) => result.id);
+        const records = await db.bookmarks.bulkGet(orderedIds);
+        const filtered = [];
+
+        records.forEach((record) => {
+          if (!record) {
+            return;
+          }
+
+          if (scopedFolderIds && !scopedFolderIds.has(record.folderId)) {
+            return;
+          }
+
+          if (queryOptions.rootOnly && !isRootBookmark(record)) {
+            return;
+          }
+
+          filtered.push(record);
+        });
+
+        const total = filtered.length;
+        const paged = filtered.slice(safeOffset, safeOffset + safeLimit);
+        const items = await attachIcons(paged);
+
+        return {
+          items,
+          total
+        };
+      });
+    }
 
     return await db.transaction('r', db.bookmarks, db.icons, db.folders, async () => {
       const scopedFolderIds = await getFolderScopeIds(folderId);

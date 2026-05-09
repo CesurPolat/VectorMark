@@ -11,6 +11,7 @@ import {
 } from '../services/dbService';
 
 import {exportDatabase, importDatabaseReplace, normalizeLegacyIconsToBase64} from '../services/dbMaintenanceService';
+import { rebuildEmbeddingIndex } from '../services/embeddingIndexService';
 
 import {
   getSettings,
@@ -27,6 +28,7 @@ import {
 } from '../sidepanel/sidepanel-utils';
 import type {
   BookmarkImportItem,
+  EmbeddingRebuildProgress,
   IconPayload,
   IconStorageMode,
   NormalizeIconsProgress,
@@ -43,6 +45,12 @@ interface SettingsPageState {
   bookmarkSortDir: Settings['bookmarkSortDir'];
   folderSortBy: Settings['folderSortBy'];
   folderSortDir: Settings['folderSortDir'];
+  semanticSearchEnabled: boolean;
+  embeddingProvider: Settings['embeddingProvider'];
+  embeddingLocalModel: string;
+  embeddingOpenAiModel: string;
+  embeddingOpenAiApiKey: string;
+  embeddingVectorDimensions: number;
 }
 
 const state: SettingsPageState = {
@@ -54,7 +62,13 @@ const state: SettingsPageState = {
   bookmarkSortBy: 'updatedAt',
   bookmarkSortDir: 'desc',
   folderSortBy: 'name',
-  folderSortDir: 'asc'
+  folderSortDir: 'asc',
+  semanticSearchEnabled: false,
+  embeddingProvider: 'local',
+  embeddingLocalModel: 'all-MiniLM-L6-v2',
+  embeddingOpenAiModel: 'text-embedding-3-small',
+  embeddingOpenAiApiKey: '',
+  embeddingVectorDimensions: 384
 };
 
 let $status;
@@ -72,6 +86,16 @@ let $bookmarkImportHtmlBtn;
 let $bookmarkJsonInput;
 let $bookmarkHtmlInput;
 let $normalizeIconsBtn;
+let $embeddingProviderSelect;
+let $semanticSearchToggle;
+let $embeddingLocalModelInput;
+let $embeddingOpenAiModelInput;
+let $embeddingOpenAiKeyInput;
+let $embeddingRebuildBtn;
+let $embeddingRebuildProgressWrap;
+let $embeddingRebuildProgress;
+let $embeddingRebuildLabel;
+let $embeddingRebuildCount;
 
 $(document).ready(async () => {
   cacheDom();
@@ -96,6 +120,16 @@ function cacheDom() {
   $bookmarkJsonInput = $('#bookmark-json-input');
   $bookmarkHtmlInput = $('#bookmark-html-input');
   $normalizeIconsBtn = $('#normalize-icons-btn');
+  $embeddingProviderSelect = $('#embedding-provider-select');
+  $semanticSearchToggle = $('#semantic-search-toggle');
+  $embeddingLocalModelInput = $('#embedding-local-model-input');
+  $embeddingOpenAiModelInput = $('#embedding-openai-model-input');
+  $embeddingOpenAiKeyInput = $('#embedding-openai-key-input');
+  $embeddingRebuildBtn = $('#embedding-rebuild-btn');
+  $embeddingRebuildProgressWrap = $('#embedding-rebuild-progress-wrap');
+  $embeddingRebuildProgress = $('#embedding-rebuild-progress');
+  $embeddingRebuildLabel = $('#embedding-rebuild-label');
+  $embeddingRebuildCount = $('#embedding-rebuild-count');
 }
 
 function bindEvents() {
@@ -166,6 +200,89 @@ function bindEvents() {
   $bookmarkImportHtmlBtn.on('click', () => $bookmarkHtmlInput.trigger('click'));
   $bookmarkHtmlInput.on('change', handleBookmarkHtmlImportChange);
   $normalizeIconsBtn.on('click', handleNormalizeIcons);
+  $embeddingProviderSelect.on('change', async () => {
+    const nextProvider = String($embeddingProviderSelect.val() ?? '').trim() === 'openai'
+      ? 'openai'
+      : 'local';
+    const previousProvider = state.embeddingProvider;
+    state.embeddingProvider = nextProvider;
+
+    try {
+      await persistSettings();
+      syncEmbeddingProviderControls();
+      setStatus('Embedding provider saved.', false);
+    } catch (error) {
+      console.error('Error saving embedding provider:', error);
+      state.embeddingProvider = previousProvider;
+      syncSettingsControls();
+      setStatus('Could not save embedding provider.', true);
+    }
+  });
+
+  $semanticSearchToggle.on('change', async () => {
+    const nextEnabled = $semanticSearchToggle.prop('checked');
+    state.semanticSearchEnabled = nextEnabled;
+
+    try {
+      await persistSettings();
+      setStatus('Semantic search setting saved.', false);
+    } catch (error) {
+      console.error('Error saving semantic search setting:', error);
+      state.semanticSearchEnabled = !nextEnabled;
+      syncSettingsControls();
+      setStatus('Could not save semantic search setting.', true);
+    }
+  });
+
+  $embeddingLocalModelInput.on('change', async () => {
+    const nextValue = String($embeddingLocalModelInput.val() ?? '').trim();
+    const previousValue = state.embeddingLocalModel;
+    state.embeddingLocalModel = nextValue || previousValue;
+
+    try {
+      await persistSettings();
+      setStatus('Local model name saved.', false);
+    } catch (error) {
+      console.error('Error saving local model name:', error);
+      state.embeddingLocalModel = previousValue;
+      syncSettingsControls();
+      setStatus('Could not save local model name.', true);
+    }
+  });
+
+  $embeddingOpenAiModelInput.on('change', async () => {
+    const nextValue = String($embeddingOpenAiModelInput.val() ?? '').trim();
+    const previousValue = state.embeddingOpenAiModel;
+    state.embeddingOpenAiModel = nextValue || previousValue;
+
+    try {
+      await persistSettings();
+      setStatus('OpenAI model name saved.', false);
+    } catch (error) {
+      console.error('Error saving OpenAI model name:', error);
+      state.embeddingOpenAiModel = previousValue;
+      syncSettingsControls();
+      setStatus('Could not save OpenAI model name.', true);
+    }
+  });
+
+  $embeddingOpenAiKeyInput.on('change', async () => {
+    const nextValue = String($embeddingOpenAiKeyInput.val() ?? '').trim();
+    const previousValue = state.embeddingOpenAiApiKey;
+    state.embeddingOpenAiApiKey = nextValue;
+
+    try {
+      await persistSettings();
+      setStatus('OpenAI API key saved.', false);
+    } catch (error) {
+      console.error('Error saving OpenAI API key:', error);
+      state.embeddingOpenAiApiKey = previousValue;
+      syncSettingsControls();
+      setStatus('Could not save OpenAI API key.', true);
+    }
+  });
+
+  $embeddingRebuildBtn.on('click', handleEmbeddingRebuild);
 }
 
 async function loadSettings() {
@@ -189,12 +306,31 @@ function applySavedSettings(saved: Settings) {
   state.bookmarkSortDir = saved.bookmarkSortDir;
   state.folderSortBy = saved.folderSortBy;
   state.folderSortDir = saved.folderSortDir;
+  state.semanticSearchEnabled = saved.semanticSearchEnabled;
+  state.embeddingProvider = saved.embeddingProvider;
+  state.embeddingLocalModel = saved.embeddingLocalModel;
+  state.embeddingOpenAiModel = saved.embeddingOpenAiModel;
+  state.embeddingOpenAiApiKey = saved.embeddingOpenAiApiKey;
+  state.embeddingVectorDimensions = saved.embeddingVectorDimensions;
 }
 
 function syncSettingsControls() {
   $openNewTabToggle.prop('checked', state.openInNewTab);
   $pageSizeSelect.val(String(state.pageSize));
   $iconStorageModeSelect.val(state.iconStorageMode === 'url' ? 'url' : 'base64');
+  $embeddingProviderSelect.val(state.embeddingProvider);
+  $semanticSearchToggle.prop('checked', state.semanticSearchEnabled);
+  $embeddingLocalModelInput.val(state.embeddingLocalModel);
+  $embeddingOpenAiModelInput.val(state.embeddingOpenAiModel);
+  $embeddingOpenAiKeyInput.val(state.embeddingOpenAiApiKey);
+  syncEmbeddingProviderControls();
+}
+
+function syncEmbeddingProviderControls() {
+  const isOpenAi = state.embeddingProvider === 'openai';
+  $embeddingOpenAiModelInput.prop('disabled', !isOpenAi);
+  $embeddingOpenAiKeyInput.prop('disabled', !isOpenAi);
+  $embeddingLocalModelInput.prop('disabled', isOpenAi);
 }
 
 function getSettingsPayload(): Settings {
@@ -207,7 +343,13 @@ function getSettingsPayload(): Settings {
     bookmarkSortDir: state.bookmarkSortDir,
     folderSortBy: state.folderSortBy,
     folderSortDir: state.folderSortDir,
-    manualOrderEnabled: false
+    manualOrderEnabled: false,
+    semanticSearchEnabled: state.semanticSearchEnabled,
+    embeddingProvider: state.embeddingProvider,
+    embeddingLocalModel: state.embeddingLocalModel,
+    embeddingOpenAiModel: state.embeddingOpenAiModel,
+    embeddingOpenAiApiKey: state.embeddingOpenAiApiKey,
+    embeddingVectorDimensions: state.embeddingVectorDimensions
   };
 }
 
@@ -220,6 +362,28 @@ async function persistSettings() {
 function setStatus(message: string, isError: boolean) {
   $status.text(message || '');
   $status.css('color', isError ? '#ffb1b1' : '');
+}
+
+function setEmbeddingRebuildProgressVisible(isVisible: boolean) {
+  if (isVisible) {
+    $embeddingRebuildProgressWrap.removeClass('is-hidden');
+  } else {
+    $embeddingRebuildProgressWrap.addClass('is-hidden');
+  }
+}
+
+function updateEmbeddingRebuildProgress(label: string, processed: number, total: number) {
+  $embeddingRebuildLabel.text(label);
+
+  if (!Number.isFinite(total) || total <= 0) {
+    $embeddingRebuildProgress.prop('value', 0);
+    $embeddingRebuildCount.text('');
+    return;
+  }
+
+  const percent = Math.min(100, Math.round((processed / total) * 100));
+  $embeddingRebuildProgress.prop('value', percent);
+  $embeddingRebuildCount.text(`${processed}/${total}`);
 }
 
 function setSettingsBusy(isBusy) {
@@ -235,6 +399,57 @@ function setSettingsBusy(isBusy) {
   $pageSizeSelect.prop('disabled', isBusy);
   $iconStorageModeSelect.prop('disabled', isBusy);
   $openLanceDbDemoBtn.prop('disabled', isBusy);
+  $embeddingProviderSelect.prop('disabled', isBusy);
+  $semanticSearchToggle.prop('disabled', isBusy);
+  $embeddingLocalModelInput.prop('disabled', isBusy || state.embeddingProvider === 'openai');
+  $embeddingOpenAiModelInput.prop('disabled', isBusy || state.embeddingProvider !== 'openai');
+  $embeddingOpenAiKeyInput.prop('disabled', isBusy || state.embeddingProvider !== 'openai');
+  $embeddingRebuildBtn.prop('disabled', isBusy);
+}
+
+async function handleEmbeddingRebuild() {
+  setSettingsBusy(true);
+  setStatus('Rebuilding embedding index...', false);
+  setEmbeddingRebuildProgressVisible(true);
+  updateEmbeddingRebuildProgress('Preparing index...', 0, 0);
+
+  try {
+    let lastProgressRenderAt = 0;
+
+    await rebuildEmbeddingIndex({
+      onProgress: (progress: EmbeddingRebuildProgress) => {
+        const now = Date.now();
+
+        if (progress.stage !== 'done' && now - lastProgressRenderAt < 120) {
+          return;
+        }
+
+        lastProgressRenderAt = now;
+
+        if (progress.stage === 'start') {
+          updateEmbeddingRebuildProgress('Preparing index...', 0, progress.total);
+          return;
+        }
+
+        if (progress.stage === 'batch') {
+          updateEmbeddingRebuildProgress('Rebuilding embeddings...', progress.processed, progress.total);
+          return;
+        }
+
+        if (progress.stage === 'done') {
+          const label = progress.total === 0 ? 'No bookmarks to index.' : 'Embedding index ready.';
+          updateEmbeddingRebuildProgress(label, progress.processed, progress.total);
+        }
+      }
+    });
+    setStatus('Embedding index rebuilt.', false);
+  } catch (error) {
+    console.error('Failed to rebuild embedding index:', error);
+    setStatus('Failed to rebuild embedding index.', true);
+    updateEmbeddingRebuildProgress('Embedding index rebuild failed.', 0, 0);
+  } finally {
+    setSettingsBusy(false);
+  }
 }
 
 function openLanceDbDemo() {

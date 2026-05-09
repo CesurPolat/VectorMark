@@ -69,6 +69,7 @@ interface SidepanelState {
   bookmarkSortDir: Settings['bookmarkSortDir'];
   folderSortBy: Settings['folderSortBy'];
   folderSortDir: Settings['folderSortDir'];
+  semanticSearchEnabled: boolean;
   totalBookmarks: number;
   hasMore: boolean;
   loadingMore: boolean;
@@ -160,6 +161,7 @@ const state: SidepanelState = {
   bookmarkSortDir: 'desc',
   folderSortBy: 'name',
   folderSortDir: 'asc',
+  semanticSearchEnabled: false,
   totalBookmarks: 0,
   hasMore: true,
   loadingMore: false,
@@ -197,6 +199,7 @@ async function loadSettings() {
     state.bookmarkSortDir = settings.bookmarkSortDir;
     state.folderSortBy = settings.folderSortBy;
     state.folderSortDir = settings.folderSortDir;
+    state.semanticSearchEnabled = settings.semanticSearchEnabled;
   } catch (error) {
     console.error('Error loading settings:', error);
     const defaults = getDefaultSettings();
@@ -208,6 +211,7 @@ async function loadSettings() {
     state.bookmarkSortDir = defaults.bookmarkSortDir;
     state.folderSortBy = defaults.folderSortBy;
     state.folderSortDir = defaults.folderSortDir;
+    state.semanticSearchEnabled = defaults.semanticSearchEnabled;
   }
 
   normalizeSharedSortState();
@@ -224,6 +228,7 @@ function applySavedSettings(saved: Settings) {
   state.bookmarkSortDir = saved.bookmarkSortDir;
   state.folderSortBy = saved.folderSortBy;
   state.folderSortDir = saved.folderSortDir;
+  state.semanticSearchEnabled = saved.semanticSearchEnabled;
   normalizeSharedSortState();
 }
 
@@ -1214,7 +1219,8 @@ async function fetchBookmarkPage({ offset, limit }: BookmarkPageRequest): Promis
   const queryOptions = {
     rootOnly: !state.query,
     sortBy: state.bookmarkSortBy,
-    sortDir: state.bookmarkSortDir
+    sortDir: state.bookmarkSortDir,
+    semanticSearch: state.semanticSearchEnabled
   };
 
   if (state.query) {

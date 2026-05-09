@@ -74,6 +74,59 @@
     </section>
 
     <section class="vm-settings-card">
+      <h2 class="title is-5">Embeddings</h2>
+      <div class="vm-settings-field">
+        <label class="label" for="embedding-provider-select">Provider</label>
+        <div class="select is-fullwidth">
+          <select id="embedding-provider-select">
+            <option value="local">Local (MiniLM)</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+      </div>
+      <div class="vm-settings-field">
+        <label class="vm-settings-checkbox" for="semantic-search-toggle">
+          <input id="semantic-search-toggle" type="checkbox" />
+          <span>Enable semantic search</span>
+        </label>
+      </div>
+      <div class="vm-settings-field">
+        <label class="label" for="embedding-local-model-input">Local model name</label>
+        <div class="control">
+          <input id="embedding-local-model-input" class="input" type="text" placeholder="all-MiniLM-L6-v2" />
+        </div>
+        <p class="vm-settings-note">Uses bundled models in /public/models.</p>
+      </div>
+      <div class="vm-settings-field">
+        <label class="label" for="embedding-openai-model-input">OpenAI model</label>
+        <div class="control">
+          <input id="embedding-openai-model-input" class="input" type="text" placeholder="text-embedding-3-small" />
+        </div>
+      </div>
+      <div class="vm-settings-field">
+        <label class="label" for="embedding-openai-key-input">OpenAI API key</label>
+        <div class="control">
+          <input id="embedding-openai-key-input" class="input" type="password" placeholder="sk-..." />
+        </div>
+        <p class="vm-settings-note">Stored locally in Chrome storage.</p>
+      </div>
+      <div class="vm-settings-actions">
+        <button id="embedding-rebuild-btn" class="button is-link is-light" type="button">
+          <span class="icon"><i class="fas fa-sync"></i></span>
+          <span>Rebuild Embedding Index</span>
+        </button>
+      </div>
+      <p class="vm-settings-note">Rebuild after switching providers or models.</p>
+      <div id="embedding-rebuild-progress-wrap" class="vm-progress is-hidden" aria-live="polite">
+        <div class="vm-progress-label">
+          <span id="embedding-rebuild-label">Preparing...</span>
+          <span id="embedding-rebuild-count"></span>
+        </div>
+        <progress id="embedding-rebuild-progress" max="100" value="0"></progress>
+      </div>
+    </section>
+
+    <section class="vm-settings-card">
       <h2 class="title is-5">VecLite Demo</h2>
       <p class="vm-settings-note">Open the test_documents notes demo with ULID records, local embeddings, and semantic search.</p>
       <div class="vm-settings-actions">

@@ -9,7 +9,13 @@ const DEFAULT_SETTINGS: Settings = {
   bookmarkSortDir: 'desc',
   folderSortBy: 'name',
   folderSortDir: 'asc',
-  manualOrderEnabled: false
+  manualOrderEnabled: false,
+  semanticSearchEnabled: false,
+  embeddingProvider: 'local',
+  embeddingLocalModel: 'all-MiniLM-L6-v2',
+  embeddingOpenAiModel: 'text-embedding-3-small',
+  embeddingOpenAiApiKey: '',
+  embeddingVectorDimensions: 384
 };
 
 const SETTINGS_STORAGE_KEY = 'vectormarkSettings';
@@ -31,6 +37,13 @@ function normalizeSettings(raw: PartialSettingsInput = {}): Settings {
   const bookmarkSortDir: SortDirection = raw.bookmarkSortDir === 'asc' ? 'asc' : 'desc';
   const folderSortBy = String(raw.folderSortBy ?? '').trim();
   const folderSortDir: SortDirection = raw.folderSortDir === 'desc' ? 'desc' : 'asc';
+  const embeddingProvider = raw.embeddingProvider === 'openai' ? 'openai' : 'local';
+  const embeddingLocalModel = String(raw.embeddingLocalModel ?? '').trim() || DEFAULT_SETTINGS.embeddingLocalModel;
+  const embeddingOpenAiModel = String(raw.embeddingOpenAiModel ?? '').trim() || DEFAULT_SETTINGS.embeddingOpenAiModel;
+  const embeddingOpenAiApiKey = String(raw.embeddingOpenAiApiKey ?? '').trim();
+  const embeddingVectorDimensions = Number.isFinite(Number(raw.embeddingVectorDimensions))
+    ? Math.max(1, Math.floor(Number(raw.embeddingVectorDimensions)))
+    : DEFAULT_SETTINGS.embeddingVectorDimensions;
 
   return {
     openInNewTab: raw.openInNewTab === true,
@@ -41,7 +54,13 @@ function normalizeSettings(raw: PartialSettingsInput = {}): Settings {
     bookmarkSortDir,
     folderSortBy: (folderSortBy || DEFAULT_SETTINGS.folderSortBy) as SortFields,
     folderSortDir,
-    manualOrderEnabled: raw.manualOrderEnabled === true
+    manualOrderEnabled: raw.manualOrderEnabled === true,
+    semanticSearchEnabled: raw.semanticSearchEnabled === true,
+    embeddingProvider,
+    embeddingLocalModel,
+    embeddingOpenAiModel,
+    embeddingOpenAiApiKey,
+    embeddingVectorDimensions
   };
 }
 
@@ -67,7 +86,13 @@ export async function getSettings(): Promise<Settings> {
       'bookmarkSortDir',
       'folderSortBy',
       'folderSortDir',
-      'manualOrderEnabled'
+      'manualOrderEnabled',
+      'semanticSearchEnabled',
+      'embeddingProvider',
+      'embeddingLocalModel',
+      'embeddingOpenAiModel',
+      'embeddingOpenAiApiKey',
+      'embeddingVectorDimensions'
     ], (result) => {
       const runtimeError = chrome.runtime?.lastError;
 
@@ -111,7 +136,13 @@ export async function updateSettings(partialSettings: PartialSettingsInput): Pro
       bookmarkSortDir: merged.bookmarkSortDir,
       folderSortBy: merged.folderSortBy,
       folderSortDir: merged.folderSortDir,
-      manualOrderEnabled: merged.manualOrderEnabled
+      manualOrderEnabled: merged.manualOrderEnabled,
+      semanticSearchEnabled: merged.semanticSearchEnabled,
+      embeddingProvider: merged.embeddingProvider,
+      embeddingLocalModel: merged.embeddingLocalModel,
+      embeddingOpenAiModel: merged.embeddingOpenAiModel,
+      embeddingOpenAiApiKey: merged.embeddingOpenAiApiKey,
+      embeddingVectorDimensions: merged.embeddingVectorDimensions
     }, () => {
       const runtimeError = chrome.runtime?.lastError;
 

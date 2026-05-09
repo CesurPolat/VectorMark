@@ -30,7 +30,8 @@
     {
       "resources": [
         "node_modules/*",
-        "models/*"
+        "models/*",
+        "veclite/*"
       ],
       "matches": ["<all_urls>"]
     }

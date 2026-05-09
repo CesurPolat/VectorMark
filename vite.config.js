@@ -1,7 +1,19 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
+import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 export default defineConfig({
+    plugins: [
+        viteStaticCopy({
+            targets: [
+                {
+                    src: resolve(__dirname, 'node_modules/veclite/dist/veclite_bg.wasm').replace(/\\/g, '/'),
+                    dest: 'veclite/',
+                    rename: { stripBase: 3 }
+                },
+            ],
+        }),
+    ],
     resolve: {
         extensions: ['.mjs', '.js', '.ts', '.jsx', '.tsx', '.json']
     },

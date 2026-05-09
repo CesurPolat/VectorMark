@@ -2,6 +2,7 @@ export type ViewMode = 'list' | 'grid';
 export type IconStorageMode = 'base64' | 'url';
 export type SortDirection = 'asc' | 'desc';
 export type SortFields = 'customOrder' | 'updatedAt' | 'createdAt' | 'lastClickedAt' | 'title' | 'name' | 'id';
+export type EmbeddingProvider = 'local' | 'openai';
 
 export interface Settings {
   openInNewTab: boolean;
@@ -13,6 +14,12 @@ export interface Settings {
   folderSortBy: SortFields;//TODO: Remove
   folderSortDir: SortDirection;
   manualOrderEnabled: boolean;
+  semanticSearchEnabled: boolean;
+  embeddingProvider: EmbeddingProvider;
+  embeddingLocalModel: string;
+  embeddingOpenAiModel: string;
+  embeddingOpenAiApiKey: string;
+  embeddingVectorDimensions: number;
 }
 
 export type PartialSettingsInput = Partial<Settings>;
@@ -64,6 +71,7 @@ export interface QueryOptions {
   rootOnly?: boolean;
   sortBy?: SortFields;
   sortDir?: SortDirection;
+  semanticSearch?: boolean;
 }
 
 export interface SearchBookmarksPageResult {
@@ -91,6 +99,12 @@ export interface NormalizeIconsSummary {
   reattached: number;
   deleted: number;
   failed: number;
+}
+
+export interface EmbeddingRebuildProgress {
+  stage: 'start' | 'batch' | 'done';
+  total: number;
+  processed: number;
 }
 
 export interface DatabaseExportPayload {
