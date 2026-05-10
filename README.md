@@ -1,4 +1,4 @@
-<img width="1536" height="1024" alt="ChatGPT Image 10 May 2026 23_55_51" src="https://github.com/user-attachments/assets/7ebd5456-8114-43a7-8648-1169302c111f" />
+<img width="1536" height="1024" alt="Banner" src="https://github.com/user-attachments/assets/7ebd5456-8114-43a7-8648-1169302c111f" />
 
 # 🚀 VectorMark
 
