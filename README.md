@@ -1,24 +1,18 @@
+<img width="1536" height="1024" alt="ChatGPT Image 10 May 2026 23_55_51" src="https://github.com/user-attachments/assets/7ebd5456-8114-43a7-8648-1169302c111f" />
+
 # 🚀 VectorMark
 
 **VectorMark — Smart bookmark manager that automatically categorizes and organizes your saved websites using semantic search.**
 
 A **local-first Chrome extension** that transforms your bookmarks into a searchable, intelligent knowledge base.
 
----
-
-## ✨ Features
+### ✨ Features
 
 * 🧠 **Fast Semantic Search (HNSW)**
   Find bookmarks by meaning using efficient local vector search powered by VecLite.
 
 * 🔒 **100% Local & Privacy-First**
   No cloud, no tracking — everything stays in your browser.
-
----
-
-## 🔍 Why VectorMark?
-
-VectorMark uses semantic search to organize and find bookmarks by meaning instead of keywords — ideal for managing large bookmark collections without manual tagging.
 
 ---
 
