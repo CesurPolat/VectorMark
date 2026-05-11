@@ -1,9 +1,26 @@
 import { resolve } from 'node:path'
+import { copyFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
+const browser = process.env.BROWSER || 'chrome'
+
+function copyManifest() {
+    return {
+        name: 'copy-manifest',
+        closeBundle() {
+            copyFileSync(
+                resolve(__dirname, `manifest.${browser}.json`),
+                resolve(__dirname, 'dist/manifest.json')
+            )
+        }
+    }
+}
+
+
 export default defineConfig({
     plugins: [
+        copyManifest(),
         viteStaticCopy({
             targets: [
                 {
@@ -30,6 +47,7 @@ export default defineConfig({
                 entryFileNames: '[name].js'
             }
         },
-        outDir: 'dist'
+        outDir: 'dist',
+        emptyOutDir: true
     }
 })

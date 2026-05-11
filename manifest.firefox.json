@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VectorMark",
-  "version": "0.1",
+  "version": "0.1.0",
   "description": "VectorMark — Smart bookmark manager that automatically categorizes and organizes your saved websites.",
   "icons": {
     "16": "icons/VectorMarkIcon_16.png",
@@ -14,8 +14,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["shortcutListener.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "shortcutListener.js"
+      ],
       "run_at": "document_start"
     }
   ],
@@ -24,7 +28,7 @@
   },
   "options_page": "src/settings/settings.html",
   "content_security_policy": {
-   "extension_pages":"script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "web_accessible_resources": [
     {
@@ -33,11 +37,19 @@
         "models/*",
         "veclite/*"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
-  "host_permissions": ["<all_urls>"],
-  "background": {"service_worker": "background.js", "type": "module"},
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ]
+  },
   "permissions": [
     "activeTab",
     "tabs",
@@ -46,5 +58,15 @@
     "sidePanel",
     "webNavigation",
     "storage"
-  ]
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "vectormark@cesurpolat.dev",
+      "strict_min_version": "121.0",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "optional": []
+      }
+    }
+  }
 }

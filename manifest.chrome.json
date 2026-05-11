@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "VectorMark",
+  "version": "0.1.0",
+  "description": "VectorMark — Smart bookmark manager that automatically categorizes and organizes your saved websites.",
+  "icons": {
+    "16": "icons/VectorMarkIcon_16.png",
+    "48": "icons/VectorMarkIcon_48.png",
+    "128": "icons/VectorMarkIcon_128.png"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "Click to open panel"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["shortcutListener.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "options_page": "src/settings/settings.html",
+  "content_security_policy": {
+   "extension_pages":"script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "node_modules/*",
+        "models/*",
+        "veclite/*"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": {"service_worker": "background.js", "type": "module" },
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "scripting",
+    "bookmarks",
+    "sidePanel",
+    "webNavigation",
+    "storage"
+  ]
+}
