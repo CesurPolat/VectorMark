@@ -16,6 +16,24 @@ A **local-first Chrome extension** that transforms your bookmarks into a searcha
 
 ---
 
+## 📥 Download
+
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/vectormark/lhbfedjnpgnbheodlkdehdkjfbiejakh">
+    <img src="https://img.shields.io/badge/Chrome-Download-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" />
+  </a>
+  <a href="https://addons.mozilla.org/en-US/firefox/addon/vectormark/">
+    <img src="https://img.shields.io/badge/Firefox-Download-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white" />
+  </a>
+  <a href="https://github.com/CesurPolat/VectorMark/releases">
+    <img src="https://img.shields.io/badge/GitHub-Releases-181717?style=for-the-badge&logo=github&logoColor=white" />
+  </a>
+</p>
+
+You can download VectorMark from the **Chrome Web Store**, **Firefox Add-ons**, or directly from **GitHub Releases**.
+
+---
+
 ## 🔌 Roadmap
 
 * [ ] Rich bookmark data support (metadata, content)
