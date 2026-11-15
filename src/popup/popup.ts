@@ -106,14 +106,20 @@ $(document).ready(async function () {
   });
 
   $("#other-bookmarks-btn").click(async function () {
-    const sidebarAction = (chrome as any).sidebarAction ?? (globalThis as any).browser?.sidebarAction;
-
-    if (sidebarAction) {
-      await sidebarAction.open();
-    } else if (source.tabId) {
-      await chrome.sidePanel.open({ tabId: source.tabId });
+    const sidebarAction = (globalThis as any).browser?.sidebarAction ?? (chrome as any).sidebarAction;
+    try {
+      if (typeof sidebarAction?.open === 'function') {
+        await sidebarAction.open();
+      } else if (typeof chrome.sidePanel?.open === 'function' && source.tabId != null) {
+        await chrome.sidePanel.open({ tabId: source.tabId });
+      } else {
+        throw new Error('Panel API unavailable. Load the build matching this browser and reload the extension.');
+      }
+      window.close();
+    } catch (error) {
+      console.error('Could not open VectorMark panel:', error);
+      $('#other-bookmarks-btn').attr('title', String(error)).text('Panel unavailable — reload extension');
     }
-    window.close();
   });
 
 });

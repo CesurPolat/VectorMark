@@ -1,11 +1,21 @@
 import { isUrlExist } from './services/dbService';
 
-var isPanelOpen = false;
+import { getSettings } from './services/settingsService';
+
+const panelPorts = new Map();
+chrome.runtime.onConnect.addListener(port => {
+  if (!port.name.startsWith('vectormark-panel:')) return;
+  const windowId = Number(port.name.split(':')[1]);
+  panelPorts.set(windowId, port);
+  port.onDisconnect.addListener(() => {
+    if (panelPorts.get(windowId) === port) panelPorts.delete(windowId);
+  });
+});
 
 const sidebarAction = globalThis.browser?.sidebarAction || chrome.sidebarAction;
 
 function isFirefoxSidebar() {
-  return Boolean(sidebarAction);
+  return typeof sidebarAction?.open === 'function';
 }
 
 function openOrToggleSidebar() {
@@ -21,7 +31,7 @@ function openOrToggleSidebar() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  if (!isFirefoxSidebar()) {
+  if (typeof chrome.sidePanel?.setPanelBehavior === 'function') {
     chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
       console.error('Error setting side panel behavior on install:', error);
     });
@@ -29,12 +39,23 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  if (!isFirefoxSidebar()) {
+  if (typeof chrome.sidePanel?.setPanelBehavior === 'function') {
     chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
       console.error('Error setting side panel behavior on startup:', error);
     });
   }
 });
+
+if (isFirefoxSidebar()) {
+  chrome.commands.onCommand.addListener(command => {
+    if (command === 'toggle-sidebar') {
+      openOrToggleSidebar().catch(error => console.error('Could not toggle sidebar:', error));
+    }
+  });
+  getSettings().then(settings => globalThis.browser.commands.update({
+    name: 'toggle-sidebar', shortcut: settings.sidePanelShortcut
+  })).catch(error => console.error('Could not configure sidebar shortcut:', error));
+}
 
 
 // When url changes, update badge
@@ -101,24 +122,26 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }
 
   if (message.type === 'open-side-panel-shortcut') {
-    if (isFirefoxSidebar()) {
-      return openOrToggleSidebar();
-    }
+    if (isFirefoxSidebar()) return;
 
     const tabId = sender?.tab?.id;
 
-    if (!tabId) {
+    if (tabId == null || typeof chrome.sidePanel?.open !== 'function') {
       return;
     }
 
-    if (isPanelOpen) {
-      isPanelOpen = false;
-      chrome.sidePanel.setOptions({enabled: false});
-      return chrome.sidePanel.setOptions({enabled: true});
+    const windowId = sender.tab.windowId;
+    if (panelPorts.has(windowId)) {
+      const closing = typeof chrome.sidePanel.close === 'function'
+        ? chrome.sidePanel.close({ windowId })
+        : chrome.sidePanel.setOptions({enabled: false})
+          .then(() => chrome.sidePanel.setOptions({enabled: true}));
+      closing.catch(error => console.error('Could not close side panel:', error));
+      return;
     }
 
-    isPanelOpen = true;
-    return chrome.sidePanel.open({ tabId });
+    chrome.sidePanel.open({ windowId }).catch(error => console.error('Could not open side panel:', error));
+    return;
   }
 
   if (message.type === 'open-popup-shortcut') {

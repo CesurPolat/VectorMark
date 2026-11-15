@@ -12,6 +12,7 @@ import {
 
 import {exportDatabase, importDatabaseReplace, normalizeLegacyIconsToBase64} from '../services/dbMaintenanceService';
 import { rebuildEmbeddingIndex } from '../services/embeddingIndexService';
+import { DEFAULT_SIDE_PANEL_SHORTCUT, normalizeShortcut, shortcutFromKeyboardEvent } from '../services/shortcutService';
 
 import {
   getSettings,
@@ -38,6 +39,7 @@ import type {
 interface SettingsPageState {
   settingsBusy: boolean;
   openInNewTab: boolean;
+  sidePanelShortcut: string;
   pageSize: number;
   viewMode: Settings['viewMode'];
   iconStorageMode: IconStorageMode;
@@ -56,6 +58,7 @@ interface SettingsPageState {
 const state: SettingsPageState = {
   settingsBusy: false,
   openInNewTab: true,
+  sidePanelShortcut: DEFAULT_SIDE_PANEL_SHORTCUT,
   pageSize: 40,
   viewMode: 'list',
   iconStorageMode: 'base64',
@@ -73,6 +76,8 @@ const state: SettingsPageState = {
 
 let $status;
 let $openNewTabToggle;
+let $sidePanelShortcutInput;
+let $sidePanelShortcutResetBtn;
 let $pageSizeSelect;
 let $iconStorageModeSelect;
 let $closePageBtn;
@@ -107,6 +112,8 @@ $(document).ready(async () => {
 function cacheDom() {
   $status = $('#settings-status');
   $openNewTabToggle = $('#open-new-tab-toggle');
+  $sidePanelShortcutInput = $('#side-panel-shortcut-input');
+  $sidePanelShortcutResetBtn = $('#side-panel-shortcut-reset-btn');
   $pageSizeSelect = $('#page-size-select');
   $iconStorageModeSelect = $('#icon-storage-mode-select');
   $closePageBtn = $('#close-page-btn');
@@ -149,6 +156,50 @@ function bindEvents() {
       state.openInNewTab = !nextOpenInNewTab;
       syncSettingsControls();
       setStatus('Could not save link behavior.', true);
+    }
+  });
+
+  $sidePanelShortcutInput.on('keydown', async (event) => {
+    event.preventDefault();
+
+    if (event.key === 'Escape') {
+      syncSettingsControls();
+      return;
+    }
+
+    const nextShortcut = shortcutFromKeyboardEvent(event.originalEvent as KeyboardEvent);
+
+    if (!nextShortcut) {
+      setStatus('Use at least one modifier key, such as Ctrl, Alt, Shift, or Meta.', true);
+      return;
+    }
+
+    const previousShortcut = state.sidePanelShortcut;
+    state.sidePanelShortcut = normalizeShortcut(nextShortcut);
+
+    try {
+      await persistSettings();
+      setStatus('Sidebar shortcut saved.', false);
+    } catch (error) {
+      console.error('Error saving sidebar shortcut:', error);
+      state.sidePanelShortcut = previousShortcut;
+      syncSettingsControls();
+      setStatus('Could not save sidebar shortcut.', true);
+    }
+  });
+
+  $sidePanelShortcutResetBtn.on('click', async () => {
+    const previousShortcut = state.sidePanelShortcut;
+    state.sidePanelShortcut = DEFAULT_SIDE_PANEL_SHORTCUT;
+
+    try {
+      await persistSettings();
+      setStatus('Sidebar shortcut reset.', false);
+    } catch (error) {
+      console.error('Error resetting sidebar shortcut:', error);
+      state.sidePanelShortcut = previousShortcut;
+      syncSettingsControls();
+      setStatus('Could not reset sidebar shortcut.', true);
     }
   });
 
@@ -299,6 +350,7 @@ async function loadSettings() {
 
 function applySavedSettings(saved: Settings) {
   state.openInNewTab = saved.openInNewTab;
+  state.sidePanelShortcut = normalizeShortcut(saved.sidePanelShortcut);
   state.pageSize = saved.pageSize;
   state.viewMode = saved.viewMode === 'grid' ? 'grid' : 'list';
   state.iconStorageMode = saved.iconStorageMode;
@@ -316,6 +368,7 @@ function applySavedSettings(saved: Settings) {
 
 function syncSettingsControls() {
   $openNewTabToggle.prop('checked', state.openInNewTab);
+  $sidePanelShortcutInput.val(state.sidePanelShortcut);
   $pageSizeSelect.val(String(state.pageSize));
   $iconStorageModeSelect.val(state.iconStorageMode === 'url' ? 'url' : 'base64');
   $embeddingProviderSelect.val(state.embeddingProvider);
@@ -336,6 +389,7 @@ function syncEmbeddingProviderControls() {
 function getSettingsPayload(): Settings {
   return {
     openInNewTab: state.openInNewTab,
+    sidePanelShortcut: state.sidePanelShortcut,
     pageSize: state.pageSize,
     viewMode: state.viewMode,
     iconStorageMode: state.iconStorageMode,

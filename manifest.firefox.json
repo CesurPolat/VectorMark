@@ -52,9 +52,16 @@
     "<all_urls>"
   ],
   "background": {
+    "type": "module",
     "scripts": [
       "background.js"
     ]
+  },
+  "commands": {
+    "toggle-sidebar": {
+      "suggested_key": { "default": "Alt+Shift+O" },
+      "description": "Toggle VectorMark sidebar"
+    }
   },
   "permissions": [
     "activeTab",

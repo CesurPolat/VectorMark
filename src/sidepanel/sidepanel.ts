@@ -24,6 +24,7 @@ import {
   updateSettings,
   getDefaultSettings
 } from '../services/settingsService';
+import { matchesShortcut, normalizeShortcut } from '../services/shortcutService';
 import {
   escapeHtml,
   escapeAttr
@@ -34,10 +35,41 @@ import type {
   FolderRecord,
   IconStorageMode,
   NormalizeIconsProgress,
-  Settings
+  Settings,
+  PartialSettingsInput
 } from '../types';
 
 type DrawerType = 'bookmark' | null;
+
+let panelWindowId: number | null = null;
+
+// Sidebar documents have no tab; exclude the full-page bookmark view.
+chrome.tabs.getCurrent().then(tab => {
+  if (tab) return;
+  return chrome.windows.getCurrent().then(currentWindow => {
+    panelWindowId = currentWindow.id ?? null;
+    const port = chrome.runtime.connect({ name: `vectormark-panel:${currentWindow.id}` });
+    window.addEventListener('pagehide', () => port.disconnect(), { once: true });
+  });
+}).catch(error => console.error('Could not register panel:', error));
+
+// Content scripts do not run inside extension pages. Handle the shortcut
+// here too, including when the search field or a bookmark editor has focus.
+window.addEventListener('keydown', event => {
+  if (panelWindowId === null || event.repeat || event.isComposing
+    || typeof chrome.sidePanel?.open !== 'function'
+    || !matchesShortcut(event, state.sidePanelShortcut)) return;
+
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  closePanelWindow();
+}, true);
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes.vectormarkSettings) return;
+  const saved = changes.vectormarkSettings.newValue as Partial<Settings> | undefined;
+  state.sidePanelShortcut = normalizeShortcut(saved?.sidePanelShortcut);
+});
 type ContextMenuType = 'bookmark' | 'folder' | null;
 
 interface ContextMenuState {
@@ -63,6 +95,7 @@ interface SidepanelState {
   settingsBusy: boolean;
   pageSize: number;
   openInNewTab: boolean;
+  sidePanelShortcut: string;
   viewMode: Settings['viewMode'];
   iconStorageMode: IconStorageMode;
   bookmarkSortBy: Settings['bookmarkSortBy'];
@@ -155,6 +188,7 @@ const state: SidepanelState = {
   settingsBusy: false,
   pageSize: 40,
   openInNewTab: true,
+  sidePanelShortcut: getDefaultSettings().sidePanelShortcut,
   viewMode: 'list',
   iconStorageMode: 'base64',
   bookmarkSortBy: 'updatedAt',
@@ -192,6 +226,7 @@ async function loadSettings() {
   try {
     const settings = await getSettings();
     state.openInNewTab = settings.openInNewTab;
+    state.sidePanelShortcut = settings.sidePanelShortcut;
     state.pageSize = settings.pageSize;
     state.viewMode = settings.viewMode === 'grid' ? 'grid' : 'list';
     state.iconStorageMode = settings.iconStorageMode;
@@ -204,6 +239,7 @@ async function loadSettings() {
     console.error('Error loading settings:', error);
     const defaults = getDefaultSettings();
     state.openInNewTab = defaults.openInNewTab;
+    state.sidePanelShortcut = defaults.sidePanelShortcut;
     state.pageSize = defaults.pageSize;
     state.viewMode = defaults.viewMode === 'grid' ? 'grid' : 'list';
     state.iconStorageMode = defaults.iconStorageMode;
@@ -221,6 +257,7 @@ async function loadSettings() {
 
 function applySavedSettings(saved: Settings) {
   state.openInNewTab = saved.openInNewTab;
+  state.sidePanelShortcut = saved.sidePanelShortcut;
   state.pageSize = saved.pageSize;
   state.viewMode = saved.viewMode === 'grid' ? 'grid' : 'list';
   state.iconStorageMode = saved.iconStorageMode;
@@ -313,7 +350,7 @@ function parseSortSelectionValue(value, fallbackBy, fallbackDir) {
   };
 }
 
-function getSettingsPayload(): Settings {
+function getSettingsPayload(): PartialSettingsInput {
   return {
     openInNewTab: state.openInNewTab,
     pageSize: state.pageSize,
@@ -2176,6 +2213,11 @@ async function toggleFullscreenMode() {
 }
 
 function closePanelWindow() {
+  if (panelWindowId !== null && typeof (chrome.sidePanel as any)?.close === 'function') {
+    (chrome.sidePanel as any).close({ windowId: panelWindowId })
+      .catch(error => console.error('Could not close panel:', error));
+    return;
+  }
   window.close();
 }
 

@@ -9,6 +9,26 @@ const SHORTCUTS = {
   OPEN_SIDE_PANEL: 'open-side-panel-shortcut'
 } as const;
 
+const DEFAULT_SIDE_PANEL_SHORTCUT = 'Alt+Shift+O';
+const usesNativeSidebarShortcut = Boolean(chrome.runtime.getManifest().commands?.['toggle-sidebar']);
+let sidePanelShortcut = DEFAULT_SIDE_PANEL_SHORTCUT;
+
+chrome.storage?.local?.get(['vectormarkSettings'], (result) => {
+  const settings = result?.vectormarkSettings as { sidePanelShortcut?: string } | undefined;
+  sidePanelShortcut = settings?.sidePanelShortcut && settings.sidePanelShortcut !== 'Ctrl+Shift+O'
+    ? settings.sidePanelShortcut : DEFAULT_SIDE_PANEL_SHORTCUT;
+});
+
+chrome.storage?.onChanged?.addListener((changes, areaName) => {
+  if (areaName !== 'local' || !changes.vectormarkSettings?.newValue) {
+    return;
+  }
+
+  const nextSettings = changes.vectormarkSettings.newValue as { sidePanelShortcut?: string };
+  sidePanelShortcut = nextSettings.sidePanelShortcut && nextSettings.sidePanelShortcut !== 'Ctrl+Shift+O'
+    ? nextSettings.sidePanelShortcut : DEFAULT_SIDE_PANEL_SHORTCUT;
+});
+
 type ShortcutMessage =
   | {
       type: typeof SHORTCUTS.OPEN_POPUP;
@@ -25,13 +45,17 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
     return;
   }
 
-  if (!(event.ctrlKey && event.shiftKey)) {
+  if (!usesNativeSidebarShortcut && matchesShortcut(event, sidePanelShortcut)) {
+    event.preventDefault();
+    const message: ShortcutMessage = {
+      type: SHORTCUTS.OPEN_SIDE_PANEL,
+      tabId: getCurrentTabIdHint()
+    };
+    chrome.runtime.sendMessage(message);
     return;
   }
 
-  const key = (event.key || '').toLowerCase();
-
-  if (key === 'd') {
+  if (event.ctrlKey && event.shiftKey && (event.key || '').toLowerCase() === 'd') {
     event.preventDefault();
     const message: ShortcutMessage = {
       type: SHORTCUTS.OPEN_POPUP,
@@ -42,14 +66,6 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
     return;
   }
 
-  if (key === 'o') {
-    event.preventDefault();
-    const message: ShortcutMessage = {
-      type: SHORTCUTS.OPEN_SIDE_PANEL,
-      tabId: getCurrentTabIdHint()
-    };
-    chrome.runtime.sendMessage(message);
-  }
 }, true);
 
 function collectPageDetails(): PageDetails {
@@ -65,4 +81,18 @@ function collectPageDetails(): PageDetails {
 function getCurrentTabIdHint(): null {
   // Content scripts cannot directly read tabId, background can resolve sender.tab.id.
   return null;
+}
+
+function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {
+  const parts = shortcut.split('+');
+  const key = parts[parts.length - 1]?.toLowerCase();
+
+  if (!key || (event.key || '').toLowerCase() !== key) {
+    return false;
+  }
+
+  return parts.includes('Ctrl') === event.ctrlKey
+    && parts.includes('Alt') === event.altKey
+    && parts.includes('Shift') === event.shiftKey
+    && parts.includes('Meta') === event.metaKey;
 }
