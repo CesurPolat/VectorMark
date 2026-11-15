@@ -31,6 +31,7 @@ function runtime(firefox = false, modernClose = true) {
   } : undefined;
   vm.runInNewContext(source, {
     chrome, browser, console,
+    databaseOperations: {}, registerDatabaseBridge() {},
     getSettings: async () => ({ sidePanelShortcut: 'Alt+Shift+O' }),
     isUrlExist: async () => false
   });

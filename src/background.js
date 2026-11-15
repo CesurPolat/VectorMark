@@ -1,4 +1,8 @@
-import { isUrlExist } from './services/dbService';
+import { isUrlExist } from './services/dbServiceLocal';
+import * as databaseOperations from './services/dbServiceLocal';
+import { registerDatabaseBridge } from './services/databaseBridge';
+
+registerDatabaseBridge(databaseOperations, chrome);
 
 import { getSettings } from './services/settingsService';
 

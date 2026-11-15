@@ -38,25 +38,10 @@ $(document).ready(async function () {
   $("#title-input").val(source.title);
   $("#icon-img").attr("src", source.favIconUrl);
 
-  const existing = await getBookmarkByUrl(currentUrl);
-  if (existing) {
-    selectedFolderId = existing.folderId;
-    $("#title-input").val(existing.title);
-  }
-
-  await populateFolders();
-
-  if (selectedFolderId !== null) {
-    // We already set selectedFolderId, let's make sure populateFolders highlights it
-  }
-
-  if (isSupportedUrl(currentUrl)) {
-    try {
-      await saveBookmark(currentUrl, source.favIconUrl);
-      markAsSaved();
-    } catch (error) {
-      console.error('Error auto-saving bookmark:', error);
-    }
+  if (chrome.extension.inIncognitoContext && chrome.runtime.getManifest().browser_specific_settings) {
+    $('<p class="help mx-3" role="note"></p>')
+      .text('Bookmarks saved here are kept in your normal VectorMark collection.')
+      .appendTo(document.body);
   }
 
   $("#done-btn").click(async function () {
@@ -121,6 +106,27 @@ $(document).ready(async function () {
       $('#other-bookmarks-btn').attr('title', String(error)).text('Panel unavailable — reload extension');
     }
   });
+
+  // Attach controls before touching storage so a database failure cannot leave
+  // the popup (especially its sidebar button) without event handlers.
+  try {
+    const existing = await getBookmarkByUrl(currentUrl);
+    if (existing) {
+      selectedFolderId = existing.folderId;
+      $("#title-input").val(existing.title);
+    }
+    await populateFolders();
+    if (isSupportedUrl(currentUrl)) {
+      await saveBookmark(currentUrl, source.favIconUrl);
+      markAsSaved();
+    }
+  } catch (error) {
+    console.error('Could not initialize bookmark storage:', error);
+    $('<p class="notification is-warning m-3" role="alert"></p>')
+      .text(error instanceof Error ? error.message : 'Could not access the bookmark database.')
+      .appendTo(document.body);
+    $('#done-btn, #remove-btn, #folder-drp button').prop('disabled', true);
+  }
 
 });
 
