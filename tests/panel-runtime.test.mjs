@@ -32,7 +32,7 @@ function runtime(firefox = false, modernClose = true) {
   vm.runInNewContext(source, {
     chrome, browser, console,
     databaseOperations: {}, registerDatabaseBridge() {},
-    getSettings: async () => ({ sidePanelShortcut: 'Alt+Shift+O' }),
+    getSettings: async () => ({ sidePanelShortcut: 'Alt+Shift+O', popupShortcut: 'Ctrl+Shift+D' }),
     isUrlExist: async () => false
   });
   return { chrome, calls };
@@ -69,6 +69,8 @@ test('Firefox toggles directly from native command and configures saved shortcut
   assert.equal(calls[0][0], 'toggle');
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls[1][1].shortcut, 'Alt+Shift+O');
+  assert.equal(calls[2][1].name, '_execute_action');
+  assert.equal(calls[2][1].shortcut, 'Ctrl+Shift+D');
   chrome.runtime.onInstalled.fire();
   chrome.runtime.onStartup.fire();
 });

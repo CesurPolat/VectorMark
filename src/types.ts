@@ -7,6 +7,7 @@ export type EmbeddingProvider = 'local' | 'openai';
 export interface Settings {
   openInNewTab: boolean;
   sidePanelShortcut: string;
+  popupShortcut: string;
   pageSize: number;
   viewMode: ViewMode;
   iconStorageMode: IconStorageMode;

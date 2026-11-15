@@ -12,7 +12,7 @@ import {
 
 import {exportDatabase, importDatabaseReplace, normalizeLegacyIconsToBase64} from '../services/dbMaintenanceService';
 import { rebuildEmbeddingIndex } from '../services/embeddingIndexService';
-import { DEFAULT_SIDE_PANEL_SHORTCUT, normalizeShortcut, shortcutFromKeyboardEvent } from '../services/shortcutService';
+import { DEFAULT_POPUP_SHORTCUT, DEFAULT_SIDE_PANEL_SHORTCUT, normalizeShortcut, shortcutFromKeyboardEvent } from '../services/shortcutService';
 
 import {
   getSettings,
@@ -40,6 +40,7 @@ interface SettingsPageState {
   settingsBusy: boolean;
   openInNewTab: boolean;
   sidePanelShortcut: string;
+  popupShortcut: string;
   pageSize: number;
   viewMode: Settings['viewMode'];
   iconStorageMode: IconStorageMode;
@@ -59,6 +60,7 @@ const state: SettingsPageState = {
   settingsBusy: false,
   openInNewTab: true,
   sidePanelShortcut: DEFAULT_SIDE_PANEL_SHORTCUT,
+  popupShortcut: DEFAULT_POPUP_SHORTCUT,
   pageSize: 40,
   viewMode: 'list',
   iconStorageMode: 'base64',
@@ -159,49 +161,8 @@ function bindEvents() {
     }
   });
 
-  $sidePanelShortcutInput.on('keydown', async (event) => {
-    event.preventDefault();
-
-    if (event.key === 'Escape') {
-      syncSettingsControls();
-      return;
-    }
-
-    const nextShortcut = shortcutFromKeyboardEvent(event.originalEvent as KeyboardEvent);
-
-    if (!nextShortcut) {
-      setStatus('Use at least one modifier key, such as Ctrl, Alt, Shift, or Meta.', true);
-      return;
-    }
-
-    const previousShortcut = state.sidePanelShortcut;
-    state.sidePanelShortcut = normalizeShortcut(nextShortcut);
-
-    try {
-      await persistSettings();
-      setStatus('Sidebar shortcut saved.', false);
-    } catch (error) {
-      console.error('Error saving sidebar shortcut:', error);
-      state.sidePanelShortcut = previousShortcut;
-      syncSettingsControls();
-      setStatus('Could not save sidebar shortcut.', true);
-    }
-  });
-
-  $sidePanelShortcutResetBtn.on('click', async () => {
-    const previousShortcut = state.sidePanelShortcut;
-    state.sidePanelShortcut = DEFAULT_SIDE_PANEL_SHORTCUT;
-
-    try {
-      await persistSettings();
-      setStatus('Sidebar shortcut reset.', false);
-    } catch (error) {
-      console.error('Error resetting sidebar shortcut:', error);
-      state.sidePanelShortcut = previousShortcut;
-      syncSettingsControls();
-      setStatus('Could not reset sidebar shortcut.', true);
-    }
-  });
+  bindShortcutControls($sidePanelShortcutInput, $sidePanelShortcutResetBtn, 'sidePanelShortcut', DEFAULT_SIDE_PANEL_SHORTCUT);
+  bindShortcutControls($('#popup-shortcut-input'), $('#popup-shortcut-reset-btn'), 'popupShortcut', DEFAULT_POPUP_SHORTCUT);
 
   $pageSizeSelect.on('change', async () => {
     const nextPageSize = Number($pageSizeSelect.val());
@@ -336,6 +297,38 @@ function bindEvents() {
   $embeddingRebuildBtn.on('click', handleEmbeddingRebuild);
 }
 
+function bindShortcutControls($input, $reset, key: 'sidePanelShortcut' | 'popupShortcut', fallback: string) {
+  let saving = false;
+  const save = async (value: string) => {
+    if (saving) return;
+    saving = true;
+    const previous = state[key];
+    state[key] = normalizeShortcut(value, fallback);
+    try {
+      await persistSettings();
+      setStatus('Keyboard shortcut saved.', false);
+    } catch (error) {
+      state[key] = previous;
+      syncSettingsControls();
+      setStatus(error instanceof Error ? error.message : 'Could not save keyboard shortcut.', true);
+    } finally {
+      saving = false;
+    }
+  };
+  $input.on('keydown', event => {
+    if (event.key === 'Tab') return;
+    event.preventDefault();
+    if (event.key === 'Escape') {
+      $input.trigger('blur');
+      return;
+    }
+    if (event.repeat) return;
+    const value = shortcutFromKeyboardEvent(event.originalEvent as KeyboardEvent);
+    if (value) void save(value);
+  });
+  $reset.on('click', () => { void save(fallback); });
+}
+
 async function loadSettings() {
   try {
     const settings = await getSettings();
@@ -351,6 +344,7 @@ async function loadSettings() {
 function applySavedSettings(saved: Settings) {
   state.openInNewTab = saved.openInNewTab;
   state.sidePanelShortcut = normalizeShortcut(saved.sidePanelShortcut);
+  state.popupShortcut = normalizeShortcut(saved.popupShortcut, DEFAULT_POPUP_SHORTCUT);
   state.pageSize = saved.pageSize;
   state.viewMode = saved.viewMode === 'grid' ? 'grid' : 'list';
   state.iconStorageMode = saved.iconStorageMode;
@@ -369,6 +363,7 @@ function applySavedSettings(saved: Settings) {
 function syncSettingsControls() {
   $openNewTabToggle.prop('checked', state.openInNewTab);
   $sidePanelShortcutInput.val(state.sidePanelShortcut);
+  $('#popup-shortcut-input').val(state.popupShortcut);
   $pageSizeSelect.val(String(state.pageSize));
   $iconStorageModeSelect.val(state.iconStorageMode === 'url' ? 'url' : 'base64');
   $embeddingProviderSelect.val(state.embeddingProvider);
@@ -390,6 +385,7 @@ function getSettingsPayload(): Settings {
   return {
     openInNewTab: state.openInNewTab,
     sidePanelShortcut: state.sidePanelShortcut,
+    popupShortcut: state.popupShortcut,
     pageSize: state.pageSize,
     viewMode: state.viewMode,
     iconStorageMode: state.iconStorageMode,

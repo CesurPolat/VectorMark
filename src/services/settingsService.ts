@@ -1,9 +1,10 @@
 import type { PartialSettingsInput, Settings, ViewMode, IconStorageMode, SortDirection, SortFields } from '../types';
-import { DEFAULT_SIDE_PANEL_SHORTCUT, normalizeShortcut } from './shortcutService';
+import { DEFAULT_POPUP_SHORTCUT, DEFAULT_SIDE_PANEL_SHORTCUT, normalizeShortcut } from './shortcutService';
 
 const DEFAULT_SETTINGS: Settings = {
   openInNewTab: false,
   sidePanelShortcut: DEFAULT_SIDE_PANEL_SHORTCUT,
+  popupShortcut: DEFAULT_POPUP_SHORTCUT,
   pageSize: 40,
   viewMode: 'list',
   iconStorageMode: 'base64',
@@ -50,6 +51,7 @@ function normalizeSettings(raw: PartialSettingsInput = {}): Settings {
   return {
     openInNewTab: raw.openInNewTab === true,
     sidePanelShortcut: normalizeShortcut(raw.sidePanelShortcut),
+    popupShortcut: normalizeShortcut(raw.popupShortcut, DEFAULT_POPUP_SHORTCUT),
     pageSize: clampPageSize(raw.pageSize),
     viewMode,
     iconStorageMode,
@@ -83,6 +85,7 @@ export async function getSettings(): Promise<Settings> {
       SETTINGS_STORAGE_KEY,
       'openInNewTab',
       'sidePanelShortcut',
+      'popupShortcut',
       'pageSize',
       'viewMode',
       'iconStorageMode',
@@ -128,9 +131,16 @@ export async function updateSettings(partialSettings: PartialSettingsInput): Pro
   const current = await getSettings();
   const merged = normalizeSettings({ ...current, ...partialSettings });
 
+  if (merged.popupShortcut === merged.sidePanelShortcut) {
+    throw new Error('Popup and sidebar shortcuts must be different.');
+  }
+
   const commands = (globalThis as any).browser?.commands;
-  if (typeof commands?.update === 'function' && partialSettings.sidePanelShortcut !== undefined) {
+  if (typeof commands?.update === 'function' && merged.sidePanelShortcut !== current.sidePanelShortcut) {
     await commands.update({ name: 'toggle-sidebar', shortcut: merged.sidePanelShortcut });
+  }
+  if (typeof commands?.update === 'function' && merged.popupShortcut !== current.popupShortcut) {
+    await commands.update({ name: '_execute_action', shortcut: merged.popupShortcut });
   }
 
   await new Promise<void>((resolve, reject) => {
@@ -139,6 +149,7 @@ export async function updateSettings(partialSettings: PartialSettingsInput): Pro
       // Keep legacy keys for backward compatibility.
       openInNewTab: merged.openInNewTab,
       sidePanelShortcut: merged.sidePanelShortcut,
+      popupShortcut: merged.popupShortcut,
       pageSize: merged.pageSize,
       viewMode: merged.viewMode,
       iconStorageMode: merged.iconStorageMode,

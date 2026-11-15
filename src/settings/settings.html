@@ -41,6 +41,18 @@
         <p id="side-panel-shortcut-note" class="vm-settings-note">Click the field, then press a modifier key combination. Avoid browser-reserved shortcuts such as Ctrl+Shift+O.</p>
       </div>
       <div class="vm-settings-field">
+        <label class="label" for="popup-shortcut-input">Open popup shortcut</label>
+        <div class="field has-addons">
+          <div class="control is-expanded">
+            <input id="popup-shortcut-input" class="input" type="text" readonly aria-describedby="popup-shortcut-note" />
+          </div>
+          <div class="control">
+            <button id="popup-shortcut-reset-btn" class="button is-light" type="button">Reset</button>
+          </div>
+        </div>
+        <p id="popup-shortcut-note" class="vm-settings-note">Default: Ctrl+Shift+D. Click and press a new combination. Browser-reserved shortcuts may take priority; try Alt+Shift+D if needed.</p>
+      </div>
+      <div class="vm-settings-field">
         <label class="label" for="page-size-select">Items per page</label>
         <div class="select is-fullwidth">
           <select id="page-size-select">

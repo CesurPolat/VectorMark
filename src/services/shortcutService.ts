@@ -1,4 +1,5 @@
 export const DEFAULT_SIDE_PANEL_SHORTCUT = 'Alt+Shift+O';
+export const DEFAULT_POPUP_SHORTCUT = 'Ctrl+Shift+D';
 
 const MODIFIER_ORDER = ['Ctrl', 'Alt', 'Shift', 'Meta'];
 
@@ -35,18 +36,18 @@ export function shortcutFromKeyboardEvent(event: KeyboardEvent): string | null {
   return [...modifiers, key].join('+');
 }
 
-export function normalizeShortcut(value: unknown): string {
+export function normalizeShortcut(value: unknown, fallback = DEFAULT_SIDE_PANEL_SHORTCUT): string {
   const raw = String(value ?? '').trim();
 
-  if (!raw || raw === 'Ctrl+Shift+O') {
-    return DEFAULT_SIDE_PANEL_SHORTCUT;
+  if (!raw || (fallback === DEFAULT_SIDE_PANEL_SHORTCUT && raw === 'Ctrl+Shift+O')) {
+    return fallback;
   }
 
   const parts = raw.split('+').map(part => part.trim()).filter(Boolean);
   const key = parts.pop();
 
   if (!key || !parts.some(part => MODIFIER_ORDER.includes(part))) {
-    return DEFAULT_SIDE_PANEL_SHORTCUT;
+    return fallback;
   }
 
   const modifiers = MODIFIER_ORDER.filter(modifier => parts.includes(modifier));

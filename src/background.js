@@ -56,9 +56,10 @@ if (isFirefoxSidebar()) {
       openOrToggleSidebar().catch(error => console.error('Could not toggle sidebar:', error));
     }
   });
-  getSettings().then(settings => globalThis.browser.commands.update({
-    name: 'toggle-sidebar', shortcut: settings.sidePanelShortcut
-  })).catch(error => console.error('Could not configure sidebar shortcut:', error));
+  getSettings().then(settings => Promise.all([
+    globalThis.browser.commands.update({ name: 'toggle-sidebar', shortcut: settings.sidePanelShortcut }),
+    globalThis.browser.commands.update({ name: '_execute_action', shortcut: settings.popupShortcut })
+  ])).catch(error => console.error('Could not configure keyboard shortcuts:', error));
 }
 
 

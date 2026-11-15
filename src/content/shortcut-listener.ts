@@ -10,11 +10,15 @@ const SHORTCUTS = {
 } as const;
 
 const DEFAULT_SIDE_PANEL_SHORTCUT = 'Alt+Shift+O';
+const DEFAULT_POPUP_SHORTCUT = 'Ctrl+Shift+D';
+const usesNativePopupShortcut = Boolean(chrome.runtime.getManifest().commands?.['_execute_action']);
 const usesNativeSidebarShortcut = Boolean(chrome.runtime.getManifest().commands?.['toggle-sidebar']);
 let sidePanelShortcut = DEFAULT_SIDE_PANEL_SHORTCUT;
+let popupShortcut = DEFAULT_POPUP_SHORTCUT;
 
 chrome.storage?.local?.get(['vectormarkSettings'], (result) => {
-  const settings = result?.vectormarkSettings as { sidePanelShortcut?: string } | undefined;
+  const settings = result?.vectormarkSettings as { sidePanelShortcut?: string; popupShortcut?: string } | undefined;
+  popupShortcut = settings?.popupShortcut || DEFAULT_POPUP_SHORTCUT;
   sidePanelShortcut = settings?.sidePanelShortcut && settings.sidePanelShortcut !== 'Ctrl+Shift+O'
     ? settings.sidePanelShortcut : DEFAULT_SIDE_PANEL_SHORTCUT;
 });
@@ -24,7 +28,8 @@ chrome.storage?.onChanged?.addListener((changes, areaName) => {
     return;
   }
 
-  const nextSettings = changes.vectormarkSettings.newValue as { sidePanelShortcut?: string };
+  const nextSettings = changes.vectormarkSettings.newValue as { sidePanelShortcut?: string; popupShortcut?: string };
+  popupShortcut = nextSettings.popupShortcut || DEFAULT_POPUP_SHORTCUT;
   sidePanelShortcut = nextSettings.sidePanelShortcut && nextSettings.sidePanelShortcut !== 'Ctrl+Shift+O'
     ? nextSettings.sidePanelShortcut : DEFAULT_SIDE_PANEL_SHORTCUT;
 });
@@ -55,7 +60,7 @@ window.addEventListener('keydown', (event: KeyboardEvent) => {
     return;
   }
 
-  if (event.ctrlKey && event.shiftKey && (event.key || '').toLowerCase() === 'd') {
+  if (!usesNativePopupShortcut && matchesShortcut(event, popupShortcut)) {
     event.preventDefault();
     const message: ShortcutMessage = {
       type: SHORTCUTS.OPEN_POPUP,
@@ -87,7 +92,8 @@ function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {
   const parts = shortcut.split('+');
   const key = parts[parts.length - 1]?.toLowerCase();
 
-  if (!key || (event.key || '').toLowerCase() !== key) {
+  const eventKey = event.key === ' ' ? 'space' : (event.key || '').toLowerCase();
+  if (!key || eventKey !== key) {
     return false;
   }
 
