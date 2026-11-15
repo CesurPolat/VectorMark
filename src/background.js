@@ -2,16 +2,38 @@ import { isUrlExist } from './services/dbService';
 
 var isPanelOpen = false;
 
+const sidebarAction = globalThis.browser?.sidebarAction || chrome.sidebarAction;
+
+function isFirefoxSidebar() {
+  return Boolean(sidebarAction);
+}
+
+function openOrToggleSidebar() {
+  if (!isFirefoxSidebar()) {
+    return null;
+  }
+
+  if (typeof sidebarAction.toggle === 'function') {
+    return sidebarAction.toggle();
+  }
+
+  return sidebarAction.open();
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
-    console.error('Error setting side panel behavior on install:', error);
-  });
+  if (!isFirefoxSidebar()) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
+      console.error('Error setting side panel behavior on install:', error);
+    });
+  }
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
-    console.error('Error setting side panel behavior on startup:', error);
-  });
+  if (!isFirefoxSidebar()) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch((error) => {
+      console.error('Error setting side panel behavior on startup:', error);
+    });
+  }
 });
 
 
@@ -79,6 +101,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   }
 
   if (message.type === 'open-side-panel-shortcut') {
+    if (isFirefoxSidebar()) {
+      return openOrToggleSidebar();
+    }
+
     const tabId = sender?.tab?.id;
 
     if (!tabId) {

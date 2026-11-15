@@ -106,7 +106,11 @@ $(document).ready(async function () {
   });
 
   $("#other-bookmarks-btn").click(async function () {
-    if (source.tabId) {
+    const sidebarAction = (chrome as any).sidebarAction ?? (globalThis as any).browser?.sidebarAction;
+
+    if (sidebarAction) {
+      await sidebarAction.open();
+    } else if (source.tabId) {
       await chrome.sidePanel.open({ tabId: source.tabId });
     }
     window.close();

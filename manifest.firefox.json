@@ -23,8 +23,14 @@
       "run_at": "document_start"
     }
   ],
-  "side_panel": {
-    "default_path": "src/sidepanel/sidepanel.html"
+  "sidebar_action": {
+    "default_icon": {
+      "16": "icons/VectorMarkIcon_16.png",
+      "32": "icons/VectorMarkIcon_48.png"
+    },
+    "default_title": "VectorMark",
+    "default_panel": "src/sidepanel/sidepanel.html",
+    "open_at_install": false
   },
   "options_page": "src/settings/settings.html",
   "content_security_policy": {
@@ -55,7 +61,6 @@
     "tabs",
     "scripting",
     "bookmarks",
-    "sidePanel",
     "webNavigation",
     "storage"
   ],
