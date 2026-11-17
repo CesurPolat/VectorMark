@@ -66,13 +66,15 @@ npm install
 npm run build
 ```
 
+Builds both browsers into `dist/chrome` and `dist/firefox`. To build one browser, run `npm run build:chrome` or `npm run build:firefox`.
+
 ### Load Extension
 
 1. Open Chrome
 2. Go to `chrome://extensions/`
 3. Enable **Developer Mode**
 4. Click **Load unpacked**
-5. Select the project' **dist** folder
+5. Select the project's **dist/chrome** folder
 
 ---
 

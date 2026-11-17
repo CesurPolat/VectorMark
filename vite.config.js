@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
 const browser = process.env.BROWSER || 'chrome'
+const outDir = resolve(__dirname, 'dist', browser)
 
 function copyManifest() {
     return {
@@ -11,7 +12,7 @@ function copyManifest() {
         closeBundle() {
             copyFileSync(
                 resolve(__dirname, `manifest.${browser}.json`),
-                resolve(__dirname, 'dist/manifest.json')
+                resolve(outDir, 'manifest.json')
             )
         }
     }
@@ -47,7 +48,7 @@ export default defineConfig({
                 entryFileNames: '[name].js'
             }
         },
-        outDir: 'dist',
+        outDir,
         emptyOutDir: true
     }
 })

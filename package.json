@@ -1,10 +1,10 @@
 {
   "name": "vectormark",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "VectorMark — Smart bookmark manager that automatically categorizes and organizes your saved websites.",
   "main": "background.js",
   "scripts": {
-    "build": "npm run build:chrome",
+    "build": "npm run build:chrome && npm run build:firefox",
     "build:chrome": "cross-env BROWSER=chrome vite build",
     "build:firefox": "cross-env BROWSER=firefox vite build",
     "typecheck": "tsc --noEmit",
